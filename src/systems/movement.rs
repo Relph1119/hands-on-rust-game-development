@@ -17,7 +17,9 @@ pub fn movement(
         // 一次性快速批量执行这些更新。
         commands.add_component(want_move.entity, want_move.destination);
         // 用来表示这个实体在当前这个子世界中是否有效，只有在系统声明中read_component或write_component之后，这个实体才有效。
-        if ecs.entry_ref(want_move.entity).unwrap().get_component::<Player>().is_ok() {
+        if ecs.entry_ref(want_move.entity)
+            .unwrap()
+            .get_component::<Player>().is_ok() {
             // 得到这个实体之后，更新与玩家角色相关摄像机的信息。
             camera.on_player_move(want_move.destination);
         }

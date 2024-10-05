@@ -5,16 +5,19 @@ use crate::prelude::*;
  * read_component：为Player组件类型申请可读权限。
  */
 #[system]
-#[write_component(Point)]
+#[read_component(Point)]
 #[read_component(Player)]
+#[read_component(Enemy)]
+#[write_component(Health)]
 pub fn player_input(
     ecs: &mut SubWorld,
     commands: &mut CommandBuffer,
     #[resource] key: &Option<VirtualKeyCode>,
-    #[resource] turn_state: &mut TurnState
+    #[resource] turn_state: &mut TurnState,
 ) {
-    let mut players = <(Entity, &Point)>::query()
-        .filter(component::<Player>());
+    let mut players = <(Entity, &Point)>::query().filter(component::<Player>());
+    let mut enemies = <(Entity, &Point)>::query().filter(component::<Enemy>());
+
     if let Some(key) = *key {
         let delta = match key {
             VirtualKeyCode::Left => Point::new(-1, 0),
@@ -23,11 +26,52 @@ pub fn player_input(
             VirtualKeyCode::Down => Point::new(0, 1),
             _ => Point::new(0, 0),
         };
-        players.iter(ecs).for_each(|(entity, pos)| {
-            let destination = *pos + delta;
-            commands.push(((), WantsToMove{entity: *entity, destination}));
-            // 当玩家做出操作后，状态变更为PlayerTurn
-            *turn_state = TurnState::PlayerTurn;
-        });
+        // 获取目标点和玩家角色实体
+        let (player_entity, destination) = players
+            .iter(ecs)
+            .find_map(|(entity, pos)| Some((*entity, *pos + delta)))
+            .unwrap();
+
+        // 是否执行了某些操作
+        let mut did_something = false;
+        // 如果位置有移动
+        if delta.x != 0 || delta.y != 0 {
+            // 是否发生战斗的标志
+            let mut hit_something = false;
+            // 如果有匹配的实体，则运行闭包，否则，空的迭代器会直接跳过这一步
+            enemies
+                .iter(ecs)
+                .filter(|(_, pos)| {
+                    **pos == destination
+                })
+                .for_each(|(entity, _)| {
+                    // 玩家角色正在面对一个怪物
+                    hit_something = true;
+                    did_something = true;
+                    commands.push(((), WantsToAttack {
+                        attacker: player_entity,
+                        victim: *entity,
+                    }));
+                });
+            // 如果没有碰到任何东西
+            if !hit_something {
+                did_something = true;
+                commands.push(((), WantsToMove {
+                    entity: player_entity,
+                    destination,
+                }));
+            }
+        }
+
+        if !did_something {
+            // 如果没有执行操作，自愿等待，可以获得治疗
+            if let Ok(mut health) = ecs
+                .entry_mut(player_entity)
+                .unwrap()
+                .get_component_mut::<Health>() {
+                health.current = i32::min(health.max, health.current + 1);
+            }
+        }
+        *turn_state = TurnState::PlayerTurn;
     }
 }

@@ -12,6 +12,23 @@ pub struct MapBuilder {
 }
 
 impl MapBuilder {
+    pub fn new(rng: &mut RandomNumberGenerator) -> Self {
+        let mut mb = MapBuilder{
+            map: Map::new(),
+            rooms: Vec::new(),
+            player_start: Point::zero(),
+        };
+        // 先填充石墙
+        mb.fill(TileType::Wall);
+        // 开凿房间
+        mb.build_random_rooms(rng);
+        // 开凿走廊
+        mb.build_corridors(rng);
+        // 玩家从第1个房间的中央开始
+        mb.player_start = mb.rooms[0].center();
+        mb
+    }
+
     fn fill(&mut self, tile: TileType) {
         // 填充石墙
         self.map.tiles.iter_mut().for_each(|t| *t = tile);
@@ -84,22 +101,5 @@ impl MapBuilder {
                 self.apply_horizontal_tunnel(prev.x, new.x, new.y);
             }
         }
-    }
-
-    pub fn new(rng: &mut RandomNumberGenerator) -> Self {
-        let mut mb = MapBuilder{
-            map: Map::new(),
-            rooms: Vec::new(),
-            player_start: Point::zero(),
-        };
-        // 先填充石墙
-        mb.fill(TileType::Wall);
-        // 开凿房间
-        mb.build_random_rooms(rng);
-        // 开凿走廊
-        mb.build_corridors(rng);
-        // 玩家从第1个房间的中央开始
-        mb.player_start = mb.rooms[0].center();
-        mb
     }
 }

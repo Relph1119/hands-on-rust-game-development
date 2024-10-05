@@ -6,7 +6,7 @@ pub struct Render {
     // 同时存储前景色和背景色
     pub color: ColorPair,
     // 标签，指示包含这个组件的实体是玩家角色对应的实体
-    pub glyph: FontCharType
+    pub glyph: FontCharType,
 }
 
 // 玩家角色实体
@@ -21,10 +21,20 @@ pub struct Enemy;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MovingRandomly;
 
+// 移动意图实体
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WantsToMove {
     pub entity: Entity,
-    pub destination: Point
+    pub destination: Point,
+}
+
+// 攻击意图实体
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WantsToAttack {
+    // 攻击者
+    pub attacker: Entity,
+    // 受害者
+    pub victim: Entity,
 }
 
 // 生命值实体
@@ -33,7 +43,7 @@ pub struct Health {
     // 当前生命值
     pub current: i32,
     // 最大生命值
-    pub max: i32
+    pub max: i32,
 }
 
 // 悬浮提示
