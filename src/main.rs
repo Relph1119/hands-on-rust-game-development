@@ -70,12 +70,21 @@ impl State {
 impl GameState for State {
     fn tick(&mut self, ctx: &mut BTerm) {
         // 清空每一个图层
+        // 0：地图图层
         ctx.set_active_console(0);
         ctx.cls();
+        // 1：实体图层
         ctx.set_active_console(1);
+        ctx.cls();
+        // 2：平视显示区图层
+        ctx.set_active_console(2);
         ctx.cls();
         // 将键盘的输入状态作为一个资源加入到资源列表中
         self.resources.insert(ctx.key);
+        // 从地图图层中获得鼠标位置
+        ctx.set_active_console(0);
+        self.resources.insert(Point::from_tuple(ctx.mouse_pos()));
+
         // 执行各个系统的执行计划
         let current_state = self.resources.get::<TurnState>().unwrap().clone();
         match current_state {
@@ -103,8 +112,10 @@ fn main() -> BError {
         .with_tile_dimensions(32, 32)
         .with_resource_path("resources/")
         .with_font("dungeonfont.png", 32, 32)
-        .with_simple_console(DISPLAY_WIDTH, DISPLAY_HEIGHT, "dungeonfont.png")
-        .with_simple_console_no_bg(DISPLAY_WIDTH, DISPLAY_HEIGHT, "dungeonfont.png")
+        .with_font("terminal8x8.png", 8, 8)
+        .with_simple_console(DISPLAY_WIDTH, DISPLAY_HEIGHT, "dungeonfont.png") //地图
+        .with_simple_console_no_bg(DISPLAY_WIDTH, DISPLAY_HEIGHT, "dungeonfont.png") // 实体
+        .with_simple_console_no_bg(SCREEN_WIDTH*2, SCREEN_HEIGHT*2, "terminal8x8.png") // 平视显示区
         .build()?;
     main_loop(context, State::new())
 }

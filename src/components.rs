@@ -26,3 +26,16 @@ pub struct WantsToMove {
     pub entity: Entity,
     pub destination: Point
 }
+
+// 生命值实体
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Health {
+    // 当前生命值
+    pub current: i32,
+    // 最大生命值
+    pub max: i32
+}
+
+// 悬浮提示
+#[derive(Clone, PartialEq)]
+pub struct Name(pub String);
