@@ -21,6 +21,10 @@ pub struct Enemy;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MovingRandomly;
 
+// 标记怪物正在追逐玩家角色
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChasingPlayer;
+
 // 移动意图实体
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WantsToMove {
@@ -49,3 +53,4 @@ pub struct Health {
 // 悬浮提示
 #[derive(Clone, PartialEq)]
 pub struct Name(pub String);
+

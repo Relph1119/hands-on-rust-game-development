@@ -13,7 +13,7 @@ pub fn combat(ecs: &mut SubWorld, commands: &mut CommandBuffer) {
         .collect();
     victims.iter().for_each(|(message, victim)| {
         // 针对只包含生命值的被攻击对象执行操作
-        if let Ok(mut health) = ecs
+        if let Ok(health) = ecs
             .entry_mut(*victim)
             .unwrap()
             .get_component_mut::<Health>()

@@ -65,7 +65,7 @@ pub fn player_input(
 
         if !did_something {
             // 如果没有执行操作，自愿等待，可以获得治疗
-            if let Ok(mut health) = ecs
+            if let Ok(health) = ecs
                 .entry_mut(player_entity)
                 .unwrap()
                 .get_component_mut::<Health>() {
