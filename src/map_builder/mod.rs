@@ -3,6 +3,7 @@ mod rooms;
 mod automata;
 mod drunkard;
 mod prefab;
+mod themes;
 
 use crate::prelude::*;
 
@@ -11,6 +12,7 @@ use rooms::RoomsArchitect;
 use crate::map_builder::automata::CellularAutomataArchitect;
 use crate::map_builder::drunkard::DrunkardsWalkArchitect;
 use crate::map_builder::prefab::apply_prefab;
+use crate::map_builder::themes::{DungeonTheme, ForestTheme};
 
 trait MapArchitect {
     fn new(&mut self, rng: &mut RandomNumberGenerator) -> MapBuilder;
@@ -29,6 +31,8 @@ pub struct MapBuilder {
     pub player_start: Point,
     // 护身符的位置
     pub amulet_start: Point,
+    // 主题风格
+    pub theme: Box<dyn MapTheme>
 }
 
 impl MapBuilder {
@@ -42,6 +46,11 @@ impl MapBuilder {
         let mut mb = architect.new(rng);
         // 放置金库
         apply_prefab(&mut mb, rng);
+
+        mb.theme = match rng.range(0, 2) {
+            0 => DungeonTheme::new(),
+            _ => ForestTheme::new()
+        };
         mb
     }
 
@@ -167,4 +176,12 @@ impl MapBuilder {
         }
         spawns
     }
+}
+
+/*
+ * Sync：可以从不同的线程安全访问
+ * Send：可以在不同的线程之间传递、转移变量
+ */
+pub trait MapTheme: Sync + Send {
+    fn tile_to_render(&self, tile_type: TileType) -> FontCharType;
 }

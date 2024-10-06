@@ -12,6 +12,7 @@ impl MapArchitect for CellularAutomataArchitect {
             monster_spawns: Vec::new(),
             player_start: Point::zero(),
             amulet_start: Point::zero(),
+            theme: super::themes::DungeonTheme::new(),
         };
         // 随机生成石墙和空地
         self.random_noise_map(rng, &mut mb.map);
