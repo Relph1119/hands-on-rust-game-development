@@ -13,6 +13,8 @@ pub enum TileType {
     Wall,
     // 地板
     Floor,
+    // 楼梯
+    Exit
 }
 
 pub struct Map {
@@ -52,8 +54,10 @@ impl Map {
 
     // 判断玩家是否可以进入一个图块
     pub fn can_enter_tile(&self, point: Point) -> bool {
-        self.in_bounds(point)
-            && self.tiles[map_idx(point.x, point.y)] == TileType::Floor
+        self.in_bounds(point) && (
+            self.tiles[map_idx(point.x, point.y)] == TileType::Floor ||
+            self.tiles[map_idx(point.x, point.y)] == TileType::Exit
+        )
     }
 
 

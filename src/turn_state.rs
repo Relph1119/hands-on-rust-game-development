@@ -9,5 +9,7 @@ pub enum TurnState {
     // 游戏结束
     GameOver,
     // 游戏胜利
-    Victory
+    Victory,
+    // 到达下一层
+    NextLevel
 }

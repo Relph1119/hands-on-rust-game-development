@@ -12,7 +12,10 @@ pub struct Render {
 
 // 玩家角色实体
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Player;
+pub struct Player {
+    // 地下城的层级
+    pub map_level: u32
+}
 
 // 怪物实体
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -78,7 +81,7 @@ impl FieldOfView {
         Self {
             visible_tiles: HashSet::new(),
             radius,
-            is_dirty: true
+            is_dirty: true,
         }
     }
 
@@ -86,7 +89,7 @@ impl FieldOfView {
         Self {
             visible_tiles: HashSet::new(),
             radius: self.radius,
-            is_dirty: true
+            is_dirty: true,
         }
     }
 }
@@ -95,7 +98,7 @@ impl FieldOfView {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProvidesHealing {
     // 药水可以恢复的生命值
-    pub amount: i32
+    pub amount: i32,
 }
 
 // 地下城地图
@@ -110,5 +113,5 @@ pub struct Carried(pub Entity);
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ActivateItem {
     pub used_by: Entity,
-    pub item: Entity
+    pub item: Entity,
 }

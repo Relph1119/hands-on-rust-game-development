@@ -41,7 +41,7 @@ struct State {
     resources: Resources,
     input_systems: Schedule,
     player_systems: Schedule,
-    monster_systems: Schedule
+    monster_systems: Schedule,
 }
 
 impl State {
@@ -49,11 +49,14 @@ impl State {
         let mut ecs = World::default();
         let mut resources = Resources::default();
         let mut rng = RandomNumberGenerator::new();
-        let map_builder = MapBuilder::new(&mut rng);
+        let mut map_builder = MapBuilder::new(&mut rng);
         // 设置玩家角色
         spawn_player(&mut ecs, map_builder.player_start);
         // 设置护身符
-        spawn_amulet_of_yala(&mut ecs, map_builder.amulet_start);
+        // spawn_amulet_of_yala(&mut ecs, map_builder.amulet_start);
+        // 设置楼梯
+        let exit_idx = map_builder.map.point2d_to_index(map_builder.amulet_start);
+        map_builder.map.tiles[exit_idx] = TileType::Exit;
         // 将怪物放置在地图上
         map_builder.monster_spawns.iter().for_each(|pos| spawn_entity(&mut ecs, &mut rng, *pos));
         resources.insert(map_builder.map);
@@ -65,7 +68,7 @@ impl State {
             resources,
             input_systems: build_input_scheduler(),
             player_systems: build_player_scheduler(),
-            monster_systems: build_monster_scheduler()
+            monster_systems: build_monster_scheduler(),
         }
     }
 
@@ -73,9 +76,11 @@ impl State {
         self.ecs = World::default();
         self.resources = Resources::default();
         let mut rng = RandomNumberGenerator::new();
-        let map_builder = MapBuilder::new(&mut rng);
+        let mut map_builder = MapBuilder::new(&mut rng);
         spawn_player(&mut self.ecs, map_builder.player_start);
-        spawn_amulet_of_yala(&mut self.ecs, map_builder.amulet_start);
+        // spawn_amulet_of_yala(&mut self.ecs, map_builder.amulet_start);
+        let exit_idx = map_builder.map.point2d_to_index(map_builder.amulet_start);
+        map_builder.map.tiles[exit_idx] = TileType::Exit;
         map_builder.monster_spawns.iter().for_each(|pos| spawn_entity(&mut self.ecs, &mut rng, *pos));
         self.resources.insert(map_builder.map);
         self.resources.insert(Camera::new(map_builder.player_start));
@@ -115,6 +120,66 @@ impl State {
             self.reset_game_state();
         }
     }
+
+    fn advance_level(&mut self) {
+        // 1. 从esc删除除玩家角色以及物品列表之外的所有实体
+        let player_entity = *<Entity>::query()
+            .filter(component::<Player>())
+            .iter(&mut self.ecs).nth(0).unwrap();
+        use std::collections::HashSet;
+        // 用于存储需要留下的实体
+        let mut entities_to_keep = HashSet::new();
+        entities_to_keep.insert(player_entity);
+        // 获取物品列表中的实体
+        <(Entity, &Carried)>::query()
+            .iter(&self.ecs)
+            .filter(|(_e, carry)| carry.0 == player_entity)
+            .map(|(e, _carry)| *e)
+            .for_each(|e| { entities_to_keep.insert(e); });
+        // 删除其余的实体
+        let mut cb = CommandBuffer::new(&mut self.ecs);
+        for e in Entity::query().iter(&self.ecs) {
+            if !entities_to_keep.contains(e) {
+                cb.remove(*e);
+            }
+        }
+        // 将变更应用到ECS世界中
+        cb.flush(&mut self.ecs);
+
+        // 2. 设置玩家角色的视野设置为脏数据，保证在下一个回合中，地图可以正确被渲染
+        <&mut FieldOfView>::query().iter_mut(&mut self.ecs)
+            .for_each(|fov| fov.is_dirty = true);
+
+        // 3. 创建新地图
+        let mut rng = RandomNumberGenerator::new();
+        let mut map_builder = MapBuilder::new(&mut rng);
+        // 设置玩家角色，并更新地图层级数
+        let mut map_level = 0;
+        <(&mut Player, &mut Point)>::query()
+            .iter_mut(&mut self.ecs)
+            .for_each(|(player, pos)| {
+                player.map_level += 1;
+                map_level = player.map_level;
+                pos.x = map_builder.player_start.x;
+                pos.y = map_builder.player_start.y;
+            });
+        if map_level == 2 {
+            // 如果地图层级到了第3层，创建亚拉的护身符
+            spawn_amulet_of_yala(&mut self.ecs, map_builder.amulet_start);
+        } else {
+            // 否则创建楼梯
+            let exit_idx = map_builder.map.point2d_to_index(map_builder.amulet_start);
+            map_builder.map.tiles[exit_idx] = TileType::Exit;
+        }
+        // 设置怪物和物品
+        map_builder.monster_spawns
+            .iter()
+            .for_each(|pos| spawn_entity(&mut self.ecs, &mut rng, *pos));
+        self.resources.insert(map_builder.map);
+        self.resources.insert(Camera::new(map_builder.player_start));
+        self.resources.insert(TurnState::AwaitingInput);
+        self.resources.insert(map_builder.theme);
+    }
 }
 
 impl GameState for State {
@@ -142,7 +207,8 @@ impl GameState for State {
             TurnState::PlayerTurn => self.player_systems.execute(&mut self.ecs, &mut self.resources),
             TurnState::MonsterTurn => self.monster_systems.execute(&mut self.ecs, &mut self.resources),
             TurnState::GameOver => self.game_over(ctx),
-            TurnState::Victory => self.victory(ctx)
+            TurnState::Victory => self.victory(ctx),
+            TurnState::NextLevel => self.advance_level()
         }
         // 批量渲染
         render_draw_buffer(ctx).expect("Render error");
@@ -167,7 +233,7 @@ fn main() -> BError {
         .with_font("terminal8x8.png", 8, 8)
         .with_simple_console(DISPLAY_WIDTH, DISPLAY_HEIGHT, "dungeonfont.png") //地图
         .with_simple_console_no_bg(DISPLAY_WIDTH, DISPLAY_HEIGHT, "dungeonfont.png") // 实体
-        .with_simple_console_no_bg(SCREEN_WIDTH*2, SCREEN_HEIGHT*2, "terminal8x8.png") // 平视显示区
+        .with_simple_console_no_bg(SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2, "terminal8x8.png") // 平视显示区
         .build()?;
     main_loop(context, State::new())
 }

@@ -1,17 +1,16 @@
-use legion::storage::ConsFlatten;
 use crate::prelude::*;
 
 pub fn spawn_player(ecs: &mut World, pos: Point) {
     // 将多个组件聚合在一个实体中，由玩家、位置信息、渲染组件、生命值、视野构成。
     ecs.push(
         (
-            Player,
+            Player { map_level: 0 },
             pos,
-            Render{
+            Render {
                 color: ColorPair::new(WHITE, BLACK),
-                glyph: to_cp437('@')
+                glyph: to_cp437('@'),
             },
-            Health{current: 10, max: 10},
+            Health { current: 10, max: 10 },
             FieldOfView::new(8) // 设置视野为8格
         )
     );
@@ -20,7 +19,7 @@ pub fn spawn_player(ecs: &mut World, pos: Point) {
 pub fn spawn_monster(
     ecs: &mut World,
     rng: &mut RandomNumberGenerator,
-    pos: Point
+    pos: Point,
 ) {
     /* 随机从4种怪物中选择一个，其中：
      * 1..8产生妖精，否则产生兽人。
@@ -38,8 +37,8 @@ pub fn spawn_monster(
                 color: ColorPair::new(WHITE, BLACK),
                 glyph,
             },
-            ChasingPlayer{},
-            Health{current: hp, max: hp},
+            ChasingPlayer {},
+            Health { current: hp, max: hp },
             Name(name),
             FieldOfView::new(6) // 设置视野为6格
         )
@@ -59,7 +58,7 @@ pub fn spawn_amulet_of_yala(ecs: &mut World, pos: Point) {
         Item, AmuletOfYala, pos,
         Render {
             color: ColorPair::new(WHITE, BLACK),
-            glyph: to_cp437('|')
+            glyph: to_cp437('|'),
         },
         Name("Amulet of Yala".to_string())
     ));
@@ -70,22 +69,22 @@ pub fn spawn_healing_potion(ecs: &mut World, pos: Point) {
         Item, pos,
         Render {
             color: ColorPair::new(WHITE, BLACK),
-            glyph: to_cp437('!')
+            glyph: to_cp437('!'),
         },
         Name("Healing Potion".to_string()),
-        ProvidesHealing{amount: 6}
+        ProvidesHealing { amount: 6 }
     ));
 }
 
 pub fn spawn_magic_mapper(ecs: &mut World, pos: Point) {
     ecs.push((
         Item, pos,
-        Render{
+        Render {
             color: ColorPair::new(WHITE, BLACK),
-            glyph: to_cp437('{')
+            glyph: to_cp437('{'),
         },
         Name("Dungeon Map".to_string()),
-        ProvidesDungeonMap{}
+        ProvidesDungeonMap {}
     ));
 }
 
