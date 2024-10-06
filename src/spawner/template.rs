@@ -20,6 +20,8 @@ pub struct Template {
     pub provides: Option<Vec<(String, i32)>>,
     // 怪物的生命值
     pub hp: Option<i32>,
+    // 基础伤害
+    pub base_damage: Option<i32>
 }
 
 #[derive(Clone, Deserialize, Debug, PartialEq)]
@@ -102,6 +104,15 @@ impl Templates {
                     _ => println!("Warning: we don't know how to provide {}", provides)
                 }
             });
+        }
+
+        // 添加伤害值信息
+        if let Some(damage) = &template.base_damage {
+            commands.add_component(entity, Damage(*damage));
+
+            if template.entity_type == EntityType::Item {
+                commands.add_component(entity, Weapon{});
+            }
         }
     }
 }

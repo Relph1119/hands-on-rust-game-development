@@ -14,7 +14,8 @@ pub fn spawn_player(ecs: &mut World, pos: Point) {
                 glyph: to_cp437('@'),
             },
             Health { current: 10, max: 10 },
-            FieldOfView::new(8) // 设置视野为8格
+            FieldOfView::new(8), // 设置视野为8格
+            Damage(1)
         )
     );
 }

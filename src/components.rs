@@ -115,3 +115,11 @@ pub struct ActivateItem {
     pub used_by: Entity,
     pub item: Entity,
 }
+
+// 伤害值
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Damage(pub i32);
+
+// 武器
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Weapon;

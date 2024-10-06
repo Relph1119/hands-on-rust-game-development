@@ -7,7 +7,6 @@ mod themes;
 
 use crate::prelude::*;
 
-use empty::EmptyArchitect;
 use rooms::RoomsArchitect;
 use crate::map_builder::automata::CellularAutomataArchitect;
 use crate::map_builder::drunkard::DrunkardsWalkArchitect;

@@ -11,6 +11,7 @@ use crate::prelude::*;
 #[write_component(Health)]
 #[read_component(Item)]
 #[read_component(Carried)]
+#[read_component(Weapon)]
 pub fn player_input(
     ecs: &mut SubWorld,
     commands: &mut CommandBuffer,
@@ -35,6 +36,19 @@ pub fn player_input(
                     .for_each(|(entity, _item, _item_pos)| {
                         commands.remove_component::<Point>(*entity);
                         commands.add_component(*entity, Carried(player));
+
+                        if let Ok(e) = ecs.entry_ref(*entity) {
+                            // 检查物品是不是武器
+                            if e.get_component::<Weapon>().is_ok() {
+                                <(Entity, &Carried, &Weapon)>::query()
+                                    .iter(ecs)
+                                    .filter(|(_, c, _)| c.0 == player)
+                                    .for_each(|(e, _c, _w)| {
+                                        // 如果是武器，则从游戏世界中移除
+                                        commands.remove(*e);
+                                    })
+                            }
+                        }
                     });
                 Point::new(0, 0)
             },
@@ -56,8 +70,6 @@ pub fn player_input(
             .find_map(|(entity, pos)| Some((*entity, *pos + delta)))
             .unwrap();
 
-        // 是否执行了某些操作
-        let mut did_something = false;
         // 如果位置有移动
         if delta.x != 0 || delta.y != 0 {
             // 是否发生战斗的标志
@@ -71,7 +83,6 @@ pub fn player_input(
                 .for_each(|(entity, _)| {
                     // 玩家角色正在面对一个怪物
                     hit_something = true;
-                    did_something = true;
                     commands.push(((), WantsToAttack {
                         attacker: player_entity,
                         victim: *entity,
@@ -79,7 +90,6 @@ pub fn player_input(
                 });
             // 如果没有碰到任何东西
             if !hit_something {
-                did_something = true;
                 commands.push(((), WantsToMove {
                     entity: player_entity,
                     destination,

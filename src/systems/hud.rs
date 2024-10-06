@@ -46,7 +46,7 @@ pub fn hud(ecs: &SubWorld) {
     }
 
     // 显示当前关卡
-    let (player, map_level) = <(Entity, &Player)>::query()
+    let (_player, map_level) = <(Entity, &Player)>::query()
         .iter(ecs)
         .find_map(|(entity, player)| Some((*entity, player.map_level))).unwrap();
     draw_batch.print_color_right(
