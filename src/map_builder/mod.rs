@@ -2,6 +2,7 @@ mod empty;
 mod rooms;
 mod automata;
 mod drunkard;
+mod prefab;
 
 use crate::prelude::*;
 
@@ -9,6 +10,7 @@ use empty::EmptyArchitect;
 use rooms::RoomsArchitect;
 use crate::map_builder::automata::CellularAutomataArchitect;
 use crate::map_builder::drunkard::DrunkardsWalkArchitect;
+use crate::map_builder::prefab::apply_prefab;
 
 trait MapArchitect {
     fn new(&mut self, rng: &mut RandomNumberGenerator) -> MapBuilder;
@@ -38,6 +40,8 @@ impl MapBuilder {
             _ => Box::new(CellularAutomataArchitect{})
         };
         let mut mb = architect.new(rng);
+        // 放置金库
+        apply_prefab(&mut mb, rng);
         mb
     }
 
