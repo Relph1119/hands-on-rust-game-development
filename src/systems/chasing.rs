@@ -3,6 +3,7 @@ use crate::prelude::*;
 #[system]
 #[read_component(Point)]
 #[read_component(ChasingPlayer)]
+#[read_component(FieldOfView)]
 #[read_component(Health)]
 #[read_component(Player)]
 pub fn chasing(
@@ -10,7 +11,7 @@ pub fn chasing(
     ecs: &SubWorld,
     commands: &mut CommandBuffer,
 ) {
-    let mut movers = <(Entity, &Point, &ChasingPlayer)>::query();
+    let mut movers = <(Entity, &Point, &ChasingPlayer, &FieldOfView)>::query();
     let mut positions = <(Entity, &Point, &Health)>::query();
     let mut player = <(&Point, &Player)>::query();
     // 查询玩家所在的位置
@@ -29,8 +30,12 @@ pub fn chasing(
         1024.0,
     );
 
-    // 追杀玩家：如果怪物与玩家处于相邻位置，一定会攻击玩家，如果不相邻，怪物沿着迪杰斯特拉图的路线追击玩家。
-    movers.iter(ecs).for_each(|(entity, pos, _)| {
+    // 追击玩家：如果怪物与玩家处于相邻位置，一定会攻击玩家，如果不相邻，怪物沿着迪杰斯特拉图的路线追击玩家。
+    movers.iter(ecs).for_each(|(entity, pos, _, fov)| {
+        // 如果怪物的视野中没有玩家，就不用追击玩家
+        if !fov.visible_tiles.contains(&player_pos) {
+            return;
+        }
         let idx = map_idx(pos.x, pos.y);
         // 找到最近的一个位置
         if let Some(destination) = DijkstraMap::find_lowest_exit(&dijkstra_map, idx, map) {
