@@ -16,8 +16,10 @@ pub enum TileType {
 }
 
 pub struct Map {
-    // 地块
+    // 图块
     pub tiles: Vec<TileType>,
+    // 已经揭示的图块
+    pub revealed_tiles: Vec<bool>
 }
 
 // 计算地图索引，行优先的编码方式
@@ -29,6 +31,7 @@ impl Map {
     pub fn new() -> Self {
         Self {
             tiles: vec![TileType::Floor; NUM_TILES],
+            revealed_tiles: vec![false; NUM_TILES]
         }
     }
 
