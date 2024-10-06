@@ -90,3 +90,25 @@ impl FieldOfView {
         }
     }
 }
+
+// 治疗药水
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProvidesHealing {
+    // 药水可以恢复的生命值
+    pub amount: i32
+}
+
+// 地下城地图
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProvidesDungeonMap;
+
+// 捡起物品
+#[derive(Clone, PartialEq)]
+pub struct Carried(pub Entity);
+
+// 使用物品
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ActivateItem {
+    pub used_by: Entity,
+    pub item: Entity
+}
