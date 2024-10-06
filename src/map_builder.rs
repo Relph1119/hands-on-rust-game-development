@@ -9,6 +9,8 @@ pub struct MapBuilder {
     pub rooms: Vec<Rect>,
     // 玩家的初始位置
     pub player_start: Point,
+    // 护身符的位置
+    pub amulet_start: Point
 }
 
 impl MapBuilder {
@@ -17,6 +19,7 @@ impl MapBuilder {
             map: Map::new(),
             rooms: Vec::new(),
             player_start: Point::zero(),
+            amulet_start: Point::zero()
         };
         // 先填充石墙
         mb.fill(TileType::Wall);
@@ -26,6 +29,25 @@ impl MapBuilder {
         mb.build_corridors(rng);
         // 玩家从第1个房间的中央开始
         mb.player_start = mb.rooms[0].center();
+
+        let dijkstra_map = DijkstraMap::new(
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            &vec![mb.map.point2d_to_index(mb.player_start)],
+            &mb.map,
+            1024.0
+        );
+        // 用于表示图块不可达
+        const UNREACHABLE : &f32 = &f32::MAX;
+        // 找到距离玩家最远的，且可到达的图块，将其设置为护身符的位置
+        mb.amulet_start = mb.map.index_to_point2d(
+            dijkstra_map.map
+                .iter()
+                .enumerate()
+                .filter(|(_,dist)| *dist < UNREACHABLE)
+                .max_by(|a,b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap().0
+        );
         mb
     }
 

@@ -54,3 +54,10 @@ pub struct Health {
 #[derive(Clone, PartialEq)]
 pub struct Name(pub String);
 
+// 物品
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Item;
+
+// 用来赢得游戏的物品：亚拉的护身符
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AmuletOfYala;
