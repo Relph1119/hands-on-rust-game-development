@@ -1,4 +1,16 @@
+mod empty;
+mod rooms;
+mod automata;
+
 use crate::prelude::*;
+
+use empty::EmptyArchitect;
+use rooms::RoomsArchitect;
+use crate::map_builder::automata::CellularAutomataArchitect;
+
+trait MapArchitect {
+    fn new(&mut self, rng: &mut RandomNumberGenerator) -> MapBuilder;
+}
 
 // 定义20个房间的地下城
 const NUM_ROOMS: usize = 20;
@@ -7,53 +19,43 @@ pub struct MapBuilder {
     pub map: Map,
     // 将要被添加到地图中的房间
     pub rooms: Vec<Rect>,
+    // 怪物列表
+    pub monster_spawns: Vec<Point>,
     // 玩家的初始位置
     pub player_start: Point,
     // 护身符的位置
-    pub amulet_start: Point
+    pub amulet_start: Point,
 }
 
 impl MapBuilder {
     pub fn new(rng: &mut RandomNumberGenerator) -> Self {
-        let mut mb = MapBuilder{
-            map: Map::new(),
-            rooms: Vec::new(),
-            player_start: Point::zero(),
-            amulet_start: Point::zero()
-        };
-        // 先填充石墙
-        mb.fill(TileType::Wall);
-        // 开凿房间
-        mb.build_random_rooms(rng);
-        // 开凿走廊
-        mb.build_corridors(rng);
-        // 玩家从第1个房间的中央开始
-        mb.player_start = mb.rooms[0].center();
-
-        let dijkstra_map = DijkstraMap::new(
-            SCREEN_WIDTH,
-            SCREEN_HEIGHT,
-            &vec![mb.map.point2d_to_index(mb.player_start)],
-            &mb.map,
-            1024.0
-        );
-        // 用于表示图块不可达
-        const UNREACHABLE : &f32 = &f32::MAX;
-        // 找到距离玩家最远的，且可到达的图块，将其设置为护身符的位置
-        mb.amulet_start = mb.map.index_to_point2d(
-            dijkstra_map.map
-                .iter()
-                .enumerate()
-                .filter(|(_,dist)| *dist < UNREACHABLE)
-                .max_by(|a,b| a.1.partial_cmp(b.1).unwrap())
-                .unwrap().0
-        );
-        mb
+        let mut architect = CellularAutomataArchitect{};
+        architect.new(rng)
     }
 
     fn fill(&mut self, tile: TileType) {
         // 填充石墙
         self.map.tiles.iter_mut().for_each(|t| *t = tile);
+    }
+
+    fn find_most_distant(&self) -> Point {
+        let dijkstra_map = DijkstraMap::new(
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            &vec![self.map.point2d_to_index(self.player_start)],
+            &self.map,
+            1024.0,
+        );
+        const UNREACHABLE: &f32 = &f32::MAX;
+        // 找到距离玩家最远的，且可到达的图块，将其设置为护身符的位置
+        self.map.index_to_point2d(
+            dijkstra_map.map
+                .iter()
+                .enumerate()
+                .filter(|(_, dist)| *dist < UNREACHABLE)
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap().0
+        )
     }
 
     fn build_random_rooms(&mut self, rng: &mut RandomNumberGenerator) {
@@ -123,5 +125,34 @@ impl MapBuilder {
                 self.apply_horizontal_tunnel(prev.x, new.x, new.y);
             }
         }
+    }
+
+    // 选出能够放置50个怪物的位置
+    fn spawn_monsters(&self, start: &Point, rng: &mut RandomNumberGenerator) -> Vec<Point> {
+        // 怪物数量为50个
+        const NUM_MONSTERS : usize = 50;
+        // 过滤出空地并且与玩家起始位置距离大于10的图块
+        let mut spawnable_tiles : Vec<Point> = self.map.tiles
+            .iter()
+            .enumerate()
+            .filter(|(idx, t)|
+                **t == TileType::Floor &&
+                    DistanceAlg::Pythagoras.distance2d(
+                        *start,
+                        self.map.index_to_point2d(*idx)
+                    ) > 10.0
+            )
+            .map(|(idx, _)| self.map.index_to_point2d(idx))
+            .collect();
+
+        let mut spawns = Vec::new();
+        for _ in 0 .. NUM_MONSTERS {
+            // 生成一个怪物的出生点坐标编号
+            let target_index = rng.random_slice_index(&spawnable_tiles).unwrap();
+            spawns.push(spawnable_tiles[target_index].clone());
+            // 已选过的图块则从待选区移除
+            spawnable_tiles.remove(target_index);
+        }
+        spawns
     }
 }
