@@ -116,5 +116,10 @@ impl BaseMap for Map {
                 self.index_to_point2d(idx2)
             )
     }
+
+    fn is_opaque(&self, idx: usize) -> bool {
+        // 定义墙是不透明的，地板是透明的
+        self.tiles[idx] != TileType::Floor
+    }
 }
 

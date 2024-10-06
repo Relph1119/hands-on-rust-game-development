@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 pub use crate::prelude::*;
 
 // 渲染实体
@@ -61,3 +62,31 @@ pub struct Item;
 // 用来赢得游戏的物品：亚拉的护身符
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AmuletOfYala;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldOfView {
+    // 实体在地图上可见的图块
+    pub visible_tiles: HashSet<Point>,
+    // 在每个方向上课可以看到的图块数量
+    pub radius: i32,
+    // 在数据需要更新的时候，将其标记为“脏数据”
+    pub is_dirty: bool,
+}
+
+impl FieldOfView {
+    pub fn new(radius: i32) -> Self {
+        Self {
+            visible_tiles: HashSet::new(),
+            radius,
+            is_dirty: true
+        }
+    }
+
+    pub fn clone_dirty(&self) -> Self {
+        Self {
+            visible_tiles: HashSet::new(),
+            radius: self.radius,
+            is_dirty: true
+        }
+    }
+}

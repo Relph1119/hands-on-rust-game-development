@@ -3,20 +3,26 @@ use crate::prelude::*;
 #[system]
 #[read_component(Point)]
 #[read_component(Name)]
-#[read_component(Health)]
+#[read_component(FieldOfView)]
+#[read_component(Player)]
 pub fn tooltips(
     ecs: &SubWorld,
     #[resource] mouse_pos: &Point,
     #[resource] camera: &Camera,
 ) {
     let mut positions = <(Entity, &Point, &Name)>::query();
+    let mut fov = <&FieldOfView>::query().filter(component::<Player>());
     let offset = Point::new(camera.left_x, camera.top_y);
     // 得到被鼠标指向的实体在地图坐标系下的坐标
     let map_pos = *mouse_pos + offset;
     let mut draw_batch = DrawBatch::new();
     draw_batch.target(2);
+    // 获取玩家视野
+    let player_fov = fov.iter(ecs).nth(0).unwrap();
     positions.iter(ecs)
-        .filter(|(_, pos, _)| **pos == map_pos)
+        .filter(|(_, pos, _)|
+            **pos == map_pos && player_fov.visible_tiles.contains(&pos)
+        )
         .for_each(|(entity, _, name)| {
             // 由于悬浮提示所在的图层是实体图层的4倍大，需要乘以4
             let screen_pos = *mouse_pos * 4;
