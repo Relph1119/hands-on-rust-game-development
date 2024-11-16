@@ -1,4 +1,6 @@
 use std::net::TcpListener;
+use sqlx::{Connection, PgConnection};
+use mailnewsletter::configuration::get_configuration;
 
 /*
  * 使用随机端口启动应用程序的一个实例，并返回地址
@@ -8,7 +10,7 @@ fn spawn_app() -> String {
         .expect("Failed to bind random port");
     // 检索操作系统分配的端口
     let port = listener.local_addr().unwrap().port();
-    let server = mailnewsletter::run(listener).expect("Failed to bind address");
+    let server = mailnewsletter::startup::run(listener).expect("Failed to bind address");
     // 启动服务器作为后台任务
     let _ = tokio::spawn(server);
     // 将应用程序地址返回给调用者
@@ -39,6 +41,12 @@ async fn health_check_works() {
 async fn subscribe_returns_a_200_for_valid_form_data() {
     // 准备
     let app_address = spawn_app();
+    let configuration = get_configuration().expect("Failed to read configuration.");
+    let connection_string = configuration.database.connection_string();
+    // 为了调用PgConnect::connect方法，Connection必须位于作用域内
+    // 必须标记为可变的
+    let mut connection = PgConnection::connect(&connection_string)
+        .await.expect("Failed to connect to Postgres.");
     let client = reqwest::Client::new();
 
     // 执行
@@ -53,6 +61,14 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
     // 断言
     assert_eq!(200, response.status().as_u16());
+
+    let saved = sqlx::query!("SELECT email, name FROM subscriptions",)
+        .fetch_one(&mut connection)
+        .await
+        .expect("Failed to fetch saved subscription.");
+
+    assert_eq!(saved.email, "ursula_le_guin@gmail.com");
+    assert_eq!(saved.name, "le guin");
 }
 
 #[tokio::test]
@@ -63,7 +79,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     let test_cases = vec![
         ("name=le%20guin", "missing the email"),
         ("email=ursula_le_guin%40gmail.com", "missing the name"),
-        ("", "missing both name and email")
+        ("", "missing both name and email"),
     ];
 
     for (invalid_body, error_message) in test_cases {

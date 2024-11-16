@@ -17,6 +17,19 @@ name = "mailnewsletter"
 actix-web = "4"
 tokio = {version = "1", features = ["macros", "rt-multi-thread"]}
 serde = { version = "1.0.214", features = ["derive"] }
+config = "0.14.1"
 
 [dev-dependencies]
 reqwest = "0.12.9"
+
+[dependencies.sqlx]
+version = "0.6.0"
+default-features = false
+features = [
+    "runtime-actix-rustls",
+    "macros",
+    "postgres",
+    "uuid",
+    "chrono",
+    "migrate"
+]
