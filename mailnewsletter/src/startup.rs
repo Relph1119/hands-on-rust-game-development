@@ -8,16 +8,21 @@
 use std::net::TcpListener;
 use actix_web::dev::Server;
 use actix_web::{App, HttpServer, web};
+use sqlx::PgPool;
 use crate::routes::{health_check, subscribe};
 
-pub fn run(listener: TcpListener) -> Result<Server, std::io::Error> {
+pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Error> {
+    // 将连接包装到一个智能指针中
+    let db_pool = web::Data::new(db_pool);
     // HttpServer处理所有传输层的问题
-    let server = HttpServer::new(|| {
+    let server = HttpServer::new(move || {
         // App使用建造者模式，添加两个端点
         App::new()
             // web::get()实际上是Route::new().guard(guard::Get())的简写
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
+            // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
+            .app_data(db_pool.clone())
     })
         .listen(listener)?
         .run();

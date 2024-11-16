@@ -8,16 +8,17 @@ edition = "2021"
 path = "src/lib.rs"
 
 # 一个项目中只能有一个库，但可以有多个二进制文件
-
 [[bin]]
 path = "src/main.rs"
 name = "mailnewsletter"
 
 [dependencies]
 actix-web = "4"
-tokio = {version = "1", features = ["macros", "rt-multi-thread"]}
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 serde = { version = "1.0.214", features = ["derive"] }
 config = "0.14.1"
+uuid = { version = "1.11.0", features = ["v4"] }
+chrono = "0.4.38"
 
 [dev-dependencies]
 reqwest = "0.12.9"
