@@ -1,0 +1,7 @@
+### 测试Hello World
+GET http://localhost:8000/
+Accept: application/json
+
+### 测试健康检查
+GET http://localhost:8000/health_check
+Accept: application/json
