@@ -1,11 +1,27 @@
 use std::net::TcpListener;
-use sqlx::PgPool;
-use mailnewsletter::configuration::get_configuration;
+use sqlx::{Connection, Executor, PgConnection, PgPool};
+use uuid::Uuid;
+use mailnewsletter::configuration::{DatabaseSettings, get_configuration};
 use mailnewsletter::startup::run;
 
 pub struct TestApp {
     pub address: String,
-    pub db_pool: PgPool
+    pub db_pool: PgPool,
+}
+
+impl TestApp {
+    // 删除数据库
+    pub async fn cleanup(&self) {
+        // 获取数据库名称，关闭数据库
+        let database_name = self.db_pool.connect_options().get_database().unwrap();
+        self.db_pool.close().await;
+        // 删除数据库
+        let configuration = get_configuration().expect("Failed to read configuration.");
+        let mut connection = PgConnection::connect(&configuration.database.connection_string_without_db())
+            .await.expect("Failed to connect to Postgres.");
+        connection.execute(format!(r#"DROP DATABASE "{}";"#, database_name).as_str())
+            .await.expect("Failed to create database.");
+    }
 }
 
 /*
@@ -19,9 +35,10 @@ async fn spawn_app() -> TestApp {
     let address = format!("http://127.0.0.1:{}", port);
 
     // 连接数据库
-    let configuration = get_configuration().expect("Failed to read configuration.");
-    let connect_pool = PgPool::connect(&configuration.database.connection_string())
-        .await.expect("Failed to connect to Postgres.");
+    let mut configuration = get_configuration().expect("Failed to read configuration.");
+    // 创建随机名称的数据库
+    configuration.database.database_name = Uuid::new_v4().to_string();
+    let connect_pool = configuration_database(&configuration.database).await;
 
     let server = run(listener, connect_pool.clone())
         .expect("Failed to bind address");
@@ -32,6 +49,25 @@ async fn spawn_app() -> TestApp {
         address,
         db_pool: connect_pool,
     }
+}
+
+pub async fn configuration_database(config: &DatabaseSettings) -> PgPool {
+    // 创建数据库
+    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+        .await.expect("Failed to connect to Postgres.");
+    connection.execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
+        .await.expect("Failed to create database.");
+
+    // 迁移数据库
+    let connection_pool = PgPool::connect(&config.connection_string())
+        .await
+        .expect("Failed to connect to Postgres.");
+    sqlx::migrate!("./migrations")
+        .run(&connection_pool)
+        .await
+        .expect("Failed to migrate the database");
+
+    connection_pool
 }
 
 #[tokio::test]
@@ -52,6 +88,8 @@ async fn health_check_works() {
     assert!(response.status().is_success());
     // 没有响应体
     assert_eq!(Some(0), response.content_length());
+    // 清理数据库
+    app.cleanup().await;
 }
 
 #[tokio::test]
@@ -80,6 +118,9 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
     assert_eq!(saved.email, "ursula_le_guin@gmail.com");
     assert_eq!(saved.name, "le guin");
+
+    // 清理数据库
+    app.cleanup().await;
 }
 
 #[tokio::test]
@@ -109,4 +150,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
                    "The API did not fail with 400 Bad Request when the payload was {}",
                    error_message);
     }
+
+    // 清理数据库
+    app.cleanup().await;
 }
