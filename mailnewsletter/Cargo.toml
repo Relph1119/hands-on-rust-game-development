@@ -3,6 +3,19 @@ name = "mailnewsletter"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+# 这里可以使用任何类路径，遵循社区约定，可以使用name字段指定库名称
+path = "src/lib.rs"
+
+# 一个项目中只能有一个库，但可以有多个二进制文件
+
+[[bin]]
+path = "src/main.rs"
+name = "mailnewsletter"
+
 [dependencies]
 actix-web = "4"
 tokio = {version = "1", features = ["macros", "rt-multi-thread"]}
+
+[dev-dependencies]
+reqwest = "0.12.9"
