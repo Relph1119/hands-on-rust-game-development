@@ -1,14 +1,20 @@
 use std::net::TcpListener;
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, web};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use actix_web::dev::Server;
 
-async fn health_check(_req: HttpRequest) -> impl Responder {
+// 使用HttpResponse代替impl Responder类型
+async fn health_check(_req: HttpRequest) -> HttpResponse {
     HttpResponse::Ok().finish()
 }
 
-async fn greet(req: HttpRequest) -> impl Responder {
-    let name = req.match_info().get("name").unwrap_or("World");
-    format!("Hello {}!", &name)
+#[derive(serde::Deserialize)]
+struct FormData {
+    email: String,
+    name: String
+}
+
+async fn subscribe(_form: web::Form<FormData>) -> HttpResponse {
+    HttpResponse::Ok().finish()
 }
 
 /*
@@ -25,6 +31,7 @@ pub fn run(listener: TcpListener) -> Result<Server, std::io::Error> {
         App::new()
             // web::get()实际上是Route::new().guard(guard::Get())的简写
             .route("/health_check", web::get().to(health_check))
+            .route("/subscriptions", web::post().to(subscribe))
     })
         .listen(listener)?
         .run();
