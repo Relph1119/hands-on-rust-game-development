@@ -1,8 +1,26 @@
 use std::net::TcpListener;
+use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use mailnewsletter::configuration::{DatabaseSettings, get_configuration};
 use mailnewsletter::startup::run;
+use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
+
+/*
+ * 使用once_cell，确保在测试期间最多只被初始化一次
+ */
+static TRACING: Lazy<()> = Lazy::new(|| {
+    let default_filter_level = "info".to_string();
+    let subscriber_name = "test".to_string();
+    // 通过条件语句，将sink和stdout分开
+    if std::env::var("TEST_LOG").is_ok() {
+        let subscriber = get_subscriber(default_filter_level, subscriber_name, std::io::stdout);
+        init_subscriber(subscriber);
+    } else {
+        let subscriber = get_subscriber(default_filter_level, subscriber_name, std::io::sink);
+        init_subscriber(subscriber);
+    }
+});
 
 pub struct TestApp {
     pub address: String,
@@ -28,6 +46,9 @@ impl TestApp {
  * 使用随机端口启动应用程序的一个实例，并返回地址
  */
 async fn spawn_app() -> TestApp {
+    // 只在第一次运行测试的时候调用
+    Lazy::force(&TRACING);
+
     let listener = TcpListener::bind("127.0.0.1:0")
         .expect("Failed to bind random port");
     // 检索操作系统分配的端口
