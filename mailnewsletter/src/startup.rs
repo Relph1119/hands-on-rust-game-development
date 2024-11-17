@@ -8,6 +8,7 @@
 use std::net::TcpListener;
 use actix_web::dev::Server;
 use actix_web::{App, HttpServer, web};
+use actix_web::middleware::Logger;
 use sqlx::PgPool;
 use crate::routes::{health_check, subscribe};
 
@@ -18,6 +19,8 @@ pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Er
     let server = HttpServer::new(move || {
         // App使用建造者模式，添加两个端点
         App::new()
+            // 通过wrap将Logger中间件加入到App中
+            .wrap(Logger::default())
             // web::get()实际上是Route::new().guard(guard::Get())的简写
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))

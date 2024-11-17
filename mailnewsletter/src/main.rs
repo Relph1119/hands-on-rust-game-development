@@ -1,10 +1,13 @@
 use std::net::TcpListener;
+use env_logger::Env;
 use sqlx::PgPool;
 use mailnewsletter::configuration::get_configuration;
 use mailnewsletter::startup::run;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    // 配置logger，默认是输入所有info及以上的日志
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     // 如果读取配置失败，发生panic
     let configuration = get_configuration().expect("Failed to read configuration.");
     let connection_pool = PgPool::connect(&configuration.database.connection_string())
