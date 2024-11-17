@@ -5,3 +5,9 @@ Accept: application/json
 ### 测试健康检查
 GET http://localhost:8000/health_check
 Accept: application/json
+
+### 测试用户订阅
+POST http://localhost:8000/subscriptions
+Content-Type: application/x-www-form-urlencoded
+
+email=thomas_mann@hotmail.com&name=Tom
