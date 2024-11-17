@@ -1,5 +1,6 @@
 use std::net::TcpListener;
 use once_cell::sync::Lazy;
+use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use mailnewsletter::configuration::{DatabaseSettings, get_configuration};
@@ -35,7 +36,7 @@ impl TestApp {
         self.db_pool.close().await;
         // 删除数据库
         let configuration = get_configuration().expect("Failed to read configuration.");
-        let mut connection = PgConnection::connect(&configuration.database.connection_string_without_db())
+        let mut connection = PgConnection::connect(&configuration.database.connection_string_without_db().expose_secret())
             .await.expect("Failed to connect to Postgres.");
         connection.execute(format!(r#"DROP DATABASE "{}";"#, database_name).as_str())
             .await.expect("Failed to create database.");
@@ -74,13 +75,13 @@ async fn spawn_app() -> TestApp {
 
 pub async fn configuration_database(config: &DatabaseSettings) -> PgPool {
     // 创建数据库
-    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+    let mut connection = PgConnection::connect(&config.connection_string_without_db().expose_secret())
         .await.expect("Failed to connect to Postgres.");
     connection.execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
         .await.expect("Failed to create database.");
 
     // 迁移数据库
-    let connection_pool = PgPool::connect(&config.connection_string())
+    let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
         .await
         .expect("Failed to connect to Postgres.");
     sqlx::migrate!("./migrations")

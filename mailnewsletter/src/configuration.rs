@@ -1,13 +1,16 @@
+use secrecy::{ExposeSecret, SecretString};
+
 #[derive(serde::Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application_port: u16
 }
 
+// 使用SecretString对数据库密码进行保护
 #[derive(serde::Deserialize)]
 pub struct DatabaseSettings {
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub port: u16,
     pub host: String,
     pub database_name: String
@@ -25,17 +28,17 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
 
 impl DatabaseSettings {
     // 配置Postgres的数据库连接
-    pub fn connection_string(&self) -> String {
+    pub fn connection_string(&self) -> SecretString {
         format!(
             "postgres://{}:{}@{}:{}/{}",
-            self.username, self.password, self.host, self.port, self.database_name
-        )
+            self.username, self.password.expose_secret(), self.host, self.port, self.database_name
+        ).into()
     }
 
-    pub fn connection_string_without_db(&self) -> String {
+    pub fn connection_string_without_db(&self) -> SecretString {
         format!(
             "postgres://{}:{}@{}:{}",
-            self.username, self.password, self.host, self.port
-        )
+            self.username, self.password.expose_secret(), self.host, self.port
+        ).into()
     }
 }

@@ -1,4 +1,5 @@
 use std::net::TcpListener;
+use secrecy::ExposeSecret;
 use sqlx::PgPool;
 use mailnewsletter::configuration::get_configuration;
 use mailnewsletter::startup::run;
@@ -11,7 +12,7 @@ async fn main() -> std::io::Result<()> {
 
     // 如果读取配置失败，发生panic
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let connection_pool = PgPool::connect(&configuration.database.connection_string())
+    let connection_pool = PgPool::connect(&configuration.database.connection_string().expose_secret())
         .await.expect("Failed to connect to Postgres.");
     // 如果绑定地址失败，则发生错误io::Error，否则，调用.await
     // 获取TcpListener对象，获取绑定的实际端口
