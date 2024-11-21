@@ -99,6 +99,7 @@ impl DatabaseSettings {
 
     pub fn with_db(&self) -> PgConnectOptions {
         let options = self.without_db().database(&self.database_name);
+        // 将sqlx的日志级别设置为trace
         options.clone().log_statements(tracing::log::LevelFilter::Trace);
         options
     }
