@@ -5,3 +5,7 @@
 cargo +nightly udeps
 ```
 
+2. 构建项目镜像
+```shell
+docker build --tag mailnewsletter -f Dockerfile .
+```

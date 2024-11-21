@@ -11,3 +11,7 @@ POST http://localhost:8000/subscriptions
 Content-Type: application/x-www-form-urlencoded
 
 email=thomas_mann@hotmail.com&name=Tom
+
+###
+GET http://127.0.0.1:56283/health_check
+Accept: application/json

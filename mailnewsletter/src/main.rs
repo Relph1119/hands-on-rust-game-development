@@ -1,6 +1,5 @@
 use std::net::TcpListener;
-use secrecy::ExposeSecret;
-use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use mailnewsletter::configuration::get_configuration;
 use mailnewsletter::startup::run;
 use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
@@ -12,11 +11,13 @@ async fn main() -> std::io::Result<()> {
 
     // 如果读取配置失败，发生panic
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let connection_pool = PgPool::connect(&configuration.database.connection_string().expose_secret())
-        .await.expect("Failed to connect to Postgres.");
+    let connection_pool = PgPoolOptions::new()
+        // 设置超时响应时间为5秒
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect_lazy_with(configuration.database.with_db());
     // 如果绑定地址失败，则发生错误io::Error，否则，调用.await
     // 获取TcpListener对象，获取绑定的实际端口
-    let address = format!("127.0.0.1:{}", configuration.application_port);
+    let address = format!("{}:{}",  configuration.application.host, configuration.application.port);
     let listener = TcpListener::bind(address)?;
 
     run(listener, connection_pool)?.await?;
