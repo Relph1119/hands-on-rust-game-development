@@ -2,12 +2,24 @@ use chrono::Utc;
 use actix_web::{HttpResponse, web};
 use uuid::Uuid;
 use sqlx::PgPool;
-use crate::domain::{NewSubscriber, SubscriberName};
+use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
     email: String,
     name: String,
+}
+
+/*
+ * 类型转换：负责将线条格式转换为领域模型
+ */
+impl TryFrom<FormData> for NewSubscriber {
+    type Error = String;
+    fn try_from(value: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(value.name)?;
+        let email = SubscriberEmail::parse(value.email)?;
+        Ok(NewSubscriber { email, name })
+    }
 }
 
 /*
@@ -17,28 +29,21 @@ pub struct FormData {
  * 使用tracing::instrument宏，创建请求ID，用于将日志和请求关联起来，并记录订阅者信息。
  */
 #[tracing::instrument(
-name = "Adding new subscriber",
-skip(form, pool),
-fields(
-subscriber_email = % form.email,
-subscriber_name = % form.name
-)
+    name = "Adding new subscriber",
+    skip(form, pool),
+    fields(
+        subscriber_email = % form.email,
+        subscriber_name = % form.name
+    )
 )]
 pub async fn subscribe(
     form: web::Form<FormData>,
     // 从应用程序状态中取出连接
     pool: web::Data<PgPool>,
 ) -> HttpResponse {
-    let name = match SubscriberName::parse(form.0.name) {
-        Ok(name) => name,
-        // 如果姓名无效，提前返回400
+    let new_subscriber = match form.0.try_into() {
+        Ok(subscriber) => subscriber,
         Err(_) => return HttpResponse::BadRequest().finish(),
-    };
-
-    // 校验输入的订阅者用户名
-    let new_subscriber = NewSubscriber {
-        email: form.0.email,
-        name,
     };
 
     match insert_subscriber(&pool, &new_subscriber).await {
@@ -61,7 +66,8 @@ pub async fn insert_subscriber(pool: &PgPool, new_subscriber: &NewSubscriber) ->
         VALUES ($1, $2, $3, $4)
         "#,
         Uuid::new_v4(),
-        new_subscriber.email,
+        // 使用SubscriberEmail的inner_ref方法，获取内部字符串的引用
+        new_subscriber.email.as_ref(),
         // 使用SubscriberName的inner_ref方法，获取内部字符串的引用
         new_subscriber.name.as_ref(),
         Utc::now()
