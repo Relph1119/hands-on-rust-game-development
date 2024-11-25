@@ -1,6 +1,7 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct SubscriberName(String);
 
 impl SubscriberName {
