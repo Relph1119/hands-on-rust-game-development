@@ -29,10 +29,16 @@ pub async fn subscribe(
     // 从应用程序状态中取出连接
     pool: web::Data<PgPool>,
 ) -> HttpResponse {
+    let name = match SubscriberName::parse(form.0.name) {
+        Ok(name) => name,
+        // 如果姓名无效，提前返回400
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+
     // 校验输入的订阅者用户名
     let new_subscriber = NewSubscriber {
         email: form.0.email,
-        name: SubscriberName::parse(form.0.name).expect("Name validation failed."),
+        name,
     };
 
     match insert_subscriber(&pool, &new_subscriber).await {
@@ -45,8 +51,8 @@ pub async fn subscribe(
  * 使用tracing::instrument宏过程，将跨度分别处理
  */
 #[tracing::instrument(
-    name = "Saving new subscriber details in the database",
-    skip(new_subscriber ,pool)
+name = "Saving new subscriber details in the database",
+skip(new_subscriber, pool)
 )]
 pub async fn insert_subscriber(pool: &PgPool, new_subscriber: &NewSubscriber) -> Result<(), sqlx::Error> {
     sqlx::query!(
@@ -60,12 +66,12 @@ pub async fn insert_subscriber(pool: &PgPool, new_subscriber: &NewSubscriber) ->
         new_subscriber.name.as_ref(),
         Utc::now()
     )
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        e
-        // 使用?操作符，可以在函数调用失败时提前结束当前函数
-    })?;
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to execute query: {:?}", e);
+            e
+            // 使用?操作符，可以在函数调用失败时提前结束当前函数
+        })?;
     Ok(())
 }
