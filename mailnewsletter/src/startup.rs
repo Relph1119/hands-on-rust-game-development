@@ -10,11 +10,13 @@ use actix_web::dev::Server;
 use actix_web::{App, HttpServer, web};
 use sqlx::PgPool;
 use tracing_actix_web::TracingLogger;
+use crate::email_client::EmailClient;
 use crate::routes::{health_check, subscribe};
 
-pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Error> {
+pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient) -> Result<Server, std::io::Error> {
     // 将连接包装到一个智能指针中
     let db_pool = web::Data::new(db_pool);
+    let email_client = web::Data::new(email_client);
     // HttpServer处理所有传输层的问题
     let server = HttpServer::new(move || {
         // App使用建造者模式，添加两个端点
@@ -26,6 +28,7 @@ pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Er
             .route("/subscriptions", web::post().to(subscribe))
             // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
             .app_data(db_pool.clone())
+            .app_data(email_client.clone())
     })
         .listen(listener)?
         .run();

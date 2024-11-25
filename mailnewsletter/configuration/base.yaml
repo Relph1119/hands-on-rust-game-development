@@ -6,3 +6,8 @@ database:
   username: "postgres"
   password: "root"
   database_name: "newsletter"
+email_client:
+  base_url: "localhost"
+  sender_email: "test@teapot.com"
+  authorization_token: "eaefca5c-8223-488b-90aa-6e8e966ce9c7"
+  timeout_milliseconds: 10000

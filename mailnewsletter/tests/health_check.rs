@@ -3,6 +3,7 @@ use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use mailnewsletter::configuration::{DatabaseSettings, get_configuration};
+use mailnewsletter::email_client::EmailClient;
 use mailnewsletter::startup::run;
 use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
 
@@ -62,7 +63,17 @@ async fn spawn_app() -> TestApp {
     configuration.database.database_name = Uuid::new_v4().to_string();
     let connect_pool = configuration_database(&configuration.database).await;
 
-    let server = run(listener, connect_pool.clone())
+    // 构建一个EmailClient
+    let sender_email = configuration.email_client.sender()
+        .expect("Invalid sender email address.");
+    let timeout = configuration.email_client.timeout();
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.authorization_token,
+        timeout);
+
+    let server = run(listener, connect_pool.clone(), email_client)
         .expect("Failed to bind address");
     // 启动服务器作为后台任务
     let _ = tokio::spawn(server);
@@ -156,7 +167,7 @@ async fn subscribe_returns_a_400_when_fields_are_present_but_invalid() {
         ("name=Ursula&email=definitely-not-an-email", "invalid email"),
     ];
 
-    for(body, description) in test_cases {
+    for (body, description) in test_cases {
         // 执行
         let response = client
             .post(&format!("{}/subscriptions", &app.address))
