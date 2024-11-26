@@ -3,7 +3,7 @@ use actix_web::{HttpResponse, web};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use uuid::Uuid;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
@@ -52,15 +52,24 @@ pub async fn subscribe(
         Ok(subscriber) => subscriber,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
+    // 从连接池取出一个连接，并开启一个事务
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return HttpResponse::InternalServerError().finish(),
+    };
 
-    let subscriber_id = match insert_subscriber(&pool, &new_subscriber).await {
+    let subscriber_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
         Ok(subscriber_id) => subscriber_id,
         Err(_) => return HttpResponse::InternalServerError().finish(),
     };
     let subscription_token = generate_subscription_token();
 
     // 存储订阅令牌
-    if store_token(&pool, subscriber_id, &subscription_token).await.is_err() {
+    if store_token(&mut transaction, subscriber_id, &subscription_token).await.is_err() {
+        return HttpResponse::InternalServerError().finish();
+    }
+
+    if transaction.commit().await.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
 
@@ -72,18 +81,53 @@ pub async fn subscribe(
     HttpResponse::Ok().finish()
 }
 
+/**
+ * 使用tracing::instrument宏过程，将跨度分别处理
+ */
+#[tracing::instrument(
+name = "Saving new subscriber details in the database",
+skip(new_subscriber, transaction)
+)]
+pub async fn insert_subscriber(
+    transaction: &mut Transaction<'_, Postgres>,
+    new_subscriber: &NewSubscriber) -> Result<Uuid, sqlx::Error> {
+    let subscriber_id = Uuid::new_v4();
+    sqlx::query!(
+        r#"
+        INSERT INTO subscriptions (id, email, name, subscribed_at, status)
+        VALUES ($1, $2, $3, $4, 'pending_confirmation')
+        "#,
+        subscriber_id,
+        // 使用SubscriberEmail的inner_ref方法，获取内部字符串的引用
+        new_subscriber.email.as_ref(),
+        // 使用SubscriberName的inner_ref方法，获取内部字符串的引用
+        new_subscriber.name.as_ref(),
+        Utc::now()
+    )
+        .execute(transaction.as_mut())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to execute query: {:?}", e);
+            e
+            // 使用?操作符，可以在函数调用失败时提前结束当前函数
+        })?;
+    Ok(subscriber_id)
+}
+
 #[tracing::instrument(
 name = "Store subscription token in the database",
-skip(subscription_token, pool)
+skip(subscription_token, transaction)
 )]
-pub async fn store_token(pool: &PgPool, subscriber_id: Uuid, subscription_token: &str) -> Result<(), sqlx::Error> {
+pub async fn store_token(transaction: &mut Transaction<'_, Postgres>,
+                         subscriber_id: Uuid,
+                         subscription_token: &str) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
         VALUES ($1, $2)"#,
         subscription_token,
         subscriber_id
     )
-        .execute(pool)
+        .execute(transaction.as_mut())
         .await
         .map_err(|e| {
             tracing::error!("Failed to execute query: {:?}", e);
@@ -111,37 +155,6 @@ async fn send_confirmation_email(
 
     // 为新的订阅者发送一封邮件
     email_client.send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body).await
-}
-
-/**
- * 使用tracing::instrument宏过程，将跨度分别处理
- */
-#[tracing::instrument(
-name = "Saving new subscriber details in the database",
-skip(new_subscriber, pool)
-)]
-pub async fn insert_subscriber(pool: &PgPool, new_subscriber: &NewSubscriber) -> Result<Uuid, sqlx::Error> {
-    let subscriber_id = Uuid::new_v4();
-    sqlx::query!(
-        r#"
-        INSERT INTO subscriptions (id, email, name, subscribed_at, status)
-        VALUES ($1, $2, $3, $4, 'pending_confirmation')
-        "#,
-        subscriber_id,
-        // 使用SubscriberEmail的inner_ref方法，获取内部字符串的引用
-        new_subscriber.email.as_ref(),
-        // 使用SubscriberName的inner_ref方法，获取内部字符串的引用
-        new_subscriber.name.as_ref(),
-        Utc::now()
-    )
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to execute query: {:?}", e);
-            e
-            // 使用?操作符，可以在函数调用失败时提前结束当前函数
-        })?;
-    Ok(subscriber_id)
 }
 
 // 生成25个字符的订阅令牌
