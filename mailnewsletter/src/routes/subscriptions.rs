@@ -1,5 +1,7 @@
 use chrono::Utc;
 use actix_web::{HttpResponse, web};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use uuid::Uuid;
 use sqlx::PgPool;
 use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
@@ -31,12 +33,12 @@ impl TryFrom<FormData> for NewSubscriber {
  * 使用tracing::instrument宏，创建请求ID，用于将日志和请求关联起来，并记录订阅者信息。
  */
 #[tracing::instrument(
-    name = "Adding new subscriber",
-    skip(form, pool, email_client, base_url),
-    fields(
-        subscriber_email = %form.email,
-        subscriber_name = %form.name
-    )
+name = "Adding new subscriber",
+skip(form, pool, email_client, base_url),
+fields(
+subscriber_email = % form.email,
+subscriber_name = % form.name
+)
 )]
 pub async fn subscribe(
     form: web::Form<FormData>,
@@ -51,11 +53,19 @@ pub async fn subscribe(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    if insert_subscriber(&pool, &new_subscriber).await.is_err() {
+    let subscriber_id = match insert_subscriber(&pool, &new_subscriber).await {
+        Ok(subscriber_id) => subscriber_id,
+        Err(_) => return HttpResponse::InternalServerError().finish(),
+    };
+    let subscription_token = generate_subscription_token();
+
+    // 存储订阅令牌
+    if store_token(&pool, subscriber_id, &subscription_token).await.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
 
-    if send_confirmation_email(&email_client, new_subscriber, &base_url.0).await.is_err() {
+    //  使用生成的动态令牌发送确认邮件
+    if send_confirmation_email(&email_client, new_subscriber, &base_url.0, &subscription_token).await.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
 
@@ -63,11 +73,33 @@ pub async fn subscribe(
 }
 
 #[tracing::instrument(
-name = "Send a confirmation email to a new subscriber",
-skip(email_client, new_subscriber, base_url)
+name = "Store subscription token in the database",
+skip(subscription_token, pool)
 )]
-async fn send_confirmation_email(email_client: &EmailClient, new_subscriber: NewSubscriber, base_url: &str) -> Result<(), reqwest::Error> {
-    let confirmation_link = format!("{}/subscriptions/confirm?subscription_token=mytoken", base_url);
+pub async fn store_token(pool: &PgPool, subscriber_id: Uuid, subscription_token: &str) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
+        VALUES ($1, $2)"#,
+        subscription_token,
+        subscriber_id
+    )
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to execute query: {:?}", e);
+            e
+        })?;
+    Ok(())
+}
+
+#[tracing::instrument(
+name = "Send a confirmation email to a new subscriber",
+skip(email_client, new_subscriber, base_url, subscription_token)
+)]
+async fn send_confirmation_email(
+    email_client: &EmailClient, new_subscriber: NewSubscriber, base_url: &str, subscription_token: &str,
+) -> Result<(), reqwest::Error> {
+    let confirmation_link = format!("{}/subscriptions/confirm?subscription_token={}", base_url, subscription_token);
 
     let plain_body = format!(
         "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
@@ -88,13 +120,14 @@ async fn send_confirmation_email(email_client: &EmailClient, new_subscriber: New
 name = "Saving new subscriber details in the database",
 skip(new_subscriber, pool)
 )]
-pub async fn insert_subscriber(pool: &PgPool, new_subscriber: &NewSubscriber) -> Result<(), sqlx::Error> {
+pub async fn insert_subscriber(pool: &PgPool, new_subscriber: &NewSubscriber) -> Result<Uuid, sqlx::Error> {
+    let subscriber_id = Uuid::new_v4();
     sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at, status)
         VALUES ($1, $2, $3, $4, 'pending_confirmation')
         "#,
-        Uuid::new_v4(),
+        subscriber_id,
         // 使用SubscriberEmail的inner_ref方法，获取内部字符串的引用
         new_subscriber.email.as_ref(),
         // 使用SubscriberName的inner_ref方法，获取内部字符串的引用
@@ -108,5 +141,14 @@ pub async fn insert_subscriber(pool: &PgPool, new_subscriber: &NewSubscriber) ->
             e
             // 使用?操作符，可以在函数调用失败时提前结束当前函数
         })?;
-    Ok(())
+    Ok(subscriber_id)
+}
+
+// 生成25个字符的订阅令牌
+fn generate_subscription_token() -> String {
+    let mut rng = rand::thread_rng();
+    std::iter::repeat_with(|| rng.sample(Alphanumeric))
+        .map(char::from)
+        .take(25)
+        .collect()
 }

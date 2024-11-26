@@ -1,4 +1,3 @@
-use reqwest::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
 use crate::helpers::spawn_app;
@@ -35,7 +34,7 @@ async fn the_link_returned_by_subscribe_returns_a_200_if_called() {
     // 获取第一个被截取的请求
     let email_request = &app.email_server.received_requests().await.unwrap()[0];
     // 将正文从二进制数据转成JSON格式
-    let confirmation_links = app.get_confirmation_links(email_request);
+    let confirmation_links = app.get_confirmation_links(&email_request);
 
     // 执行
     let response = reqwest::get(confirmation_links.html)
@@ -44,4 +43,39 @@ async fn the_link_returned_by_subscribe_returns_a_200_if_called() {
 
     // 断言
     assert_eq!(response.status().as_u16(), 200);
+}
+
+#[tokio::test]
+async fn clicking_on_the_confirmation_link_confirms_a_subscriber() {
+    // 准备
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    // 先调用POST /subscriptions方法
+    app.post_subscriptions(body.into()).await;
+    let email_request = &app.email_server.received_requests().await.unwrap()[0];
+    let confirmation_links = app.get_confirmation_links(&email_request);
+
+    // 执行
+    reqwest::get(confirmation_links.html)
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    // 断言
+    let saved = sqlx::query!("SELECT email, name, status FROM subscriptions",)
+        .fetch_one(&app.db_pool)
+        .await
+        .expect("Failed to fetch saved subscription.");
+
+    assert_eq!(saved.email, "ursula_le_guin@gmail.com");
+    assert_eq!(saved.name, "le guin");
+    assert_eq!(saved.status, "confirmed");
 }
