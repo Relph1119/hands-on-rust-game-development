@@ -3,6 +3,7 @@ use secrecy::{ExposeSecret, SecretString};
 use crate::domain::SubscriberEmail;
 
 #[derive(Clone)]
+#[derive(Debug)]
 pub struct EmailClient {
     // 存储Client实例
     http_client: Client,

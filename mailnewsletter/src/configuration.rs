@@ -39,6 +39,8 @@ pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
+    // 添加测试环境的链接
+    pub base_url: String,
 }
 
 // 使用SecretString对数据库密码进行保护

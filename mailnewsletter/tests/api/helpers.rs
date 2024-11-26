@@ -2,6 +2,7 @@ use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
+use wiremock::MockServer;
 use mailnewsletter::configuration::{DatabaseSettings, get_configuration};
 use mailnewsletter::startup::{Application, get_connection_pool};
 use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
@@ -22,9 +23,18 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
+// 在发送给邮件API的请求中所包含的确认链接
+pub struct ConfirmationLinks {
+    pub html: reqwest::Url,
+    pub plain_text: reqwest::Url,
+}
+
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
+    pub email_server: MockServer,
+    // 添加端口
+    pub port: u16,
 }
 
 impl TestApp {
@@ -36,6 +46,31 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.");
+    }
+
+    // 从发送给邮件API的请求中提取确认链接
+    pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
+        let body: serde_json::Value = serde_json::from_slice(&email_request.body).unwrap();
+        // 从指定的字段中提取链接
+        let get_link = |s: &str| {
+            let links: Vec<_> = linkify::LinkFinder::new()
+                .links(s)
+                .filter(|l| *l.kind() == linkify::LinkKind::Url)
+                .collect();
+            assert_eq!(links.len(), 1);
+            let raw_link = links[0].as_str().to_owned();
+            // 解析确认的链接
+            let mut confirmation_link = reqwest::Url::parse(&raw_link).unwrap();
+            // 确保调用的API是本地的
+            assert_eq!(confirmation_link.host_str().unwrap(), "127.0.0.1");
+            // 设置URL中的端口
+            confirmation_link.set_port(Some(self.port)).unwrap();
+            confirmation_link
+        };
+
+        let html = get_link(&body["HtmlBody"].as_str().unwrap());
+        let plain_text = get_link(&body["TextBody"].as_str().unwrap());
+        ConfirmationLinks { html, plain_text }
     }
 
     // 删除数据库
@@ -70,6 +105,8 @@ impl TestApp {
 pub async fn spawn_app() -> TestApp {
     // 只在第一次运行测试的时候调用
     Lazy::force(&TRACING);
+    // 模拟一个服务器
+    let email_server = MockServer::start().await;
 
     let configuration = {
         // 连接数据库
@@ -77,6 +114,8 @@ pub async fn spawn_app() -> TestApp {
         // 创建随机名称的数据库
         c.database.database_name = Uuid::new_v4().to_string();
         c.application.port = 0;
+        // 使用模拟服务器作为邮件API
+        c.email_client.base_url = email_server.uri();
         c
     };
 
@@ -87,13 +126,15 @@ pub async fn spawn_app() -> TestApp {
         .await
         .expect("Failed to build application.");
     // 在启动应用程序之前获取端口
-    let address = format!("http://127.0.0.1:{}", application.port());
+    let application_port = application.port();
     let _ = tokio::spawn(application.run_until_stopped());
 
     // 将应用程序地址返回给调用者
     TestApp {
-        address,
+        address: format!("http://localhost:{}", application_port),
+        port: application_port,
         db_pool: get_connection_pool(&configuration.database),
+        email_server,
     }
 }
 

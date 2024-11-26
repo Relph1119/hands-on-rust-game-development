@@ -13,7 +13,7 @@ use sqlx::postgres::PgPoolOptions;
 use tracing_actix_web::TracingLogger;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::{health_check, subscribe};
+use crate::routes::{health_check, subscribe, confirm};
 
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
@@ -23,10 +23,14 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
         .connect_lazy_with(configuration.with_db())
 }
 
-pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient) -> Result<Server, std::io::Error> {
+pub fn run(listener: TcpListener,
+           db_pool: PgPool,
+           email_client: EmailClient,
+           base_url: String) -> Result<Server, std::io::Error> {
     // 将连接包装到一个智能指针中
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
+    let base_url = web::Data::new(ApplicationBaseUrl(base_url));
     // HttpServer处理所有传输层的问题
     let server = HttpServer::new(move || {
         // App使用建造者模式，添加两个端点
@@ -36,15 +40,20 @@ pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient) ->
             // web::get()实际上是Route::new().guard(guard::Get())的简写
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
+            .route("/subscriptions/confirm", web::get().to(confirm))
             // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
             .app_data(db_pool.clone())
+            // 将EmailClient注册到应用程序的上下文中
             .app_data(email_client.clone())
+            .app_data(base_url.clone())
     })
         .listen(listener)?
         .run();
 
     Ok(server)
 }
+
+pub struct ApplicationBaseUrl(pub String);
 
 pub struct Application {
     port: u16,
@@ -70,7 +79,7 @@ impl Application {
         let address = format!("{}:{}", configuration.application.host, configuration.application.port);
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool, email_client)?;
+        let server = run(listener, connection_pool, email_client, configuration.application.base_url)?;
 
         Ok(Self { port, server })
     }
