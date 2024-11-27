@@ -5,16 +5,15 @@
  * 删除.await的目的是由于HttpServer::run会返回一个Server实例，当调用.await时，不断循环监听地址，处理到达的请求。
  * 采用随机端口运行后台程序：加入应用地址address作为参数
  */
-use std::net::TcpListener;
-use actix_web::dev::Server;
-use actix_web::{App, HttpServer, web};
-use sqlx::PgPool;
-use sqlx::postgres::PgPoolOptions;
-use tracing_actix_web::TracingLogger;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::{health_check, subscribe, confirm};
-
+use crate::routes::{confirm, health_check, subscribe};
+use actix_web::dev::Server;
+use actix_web::{web, App, HttpServer};
+use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
+use std::net::TcpListener;
+use tracing_actix_web::TracingLogger;
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new()
@@ -23,10 +22,12 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
         .connect_lazy_with(configuration.with_db())
 }
 
-pub fn run(listener: TcpListener,
-           db_pool: PgPool,
-           email_client: EmailClient,
-           base_url: String) -> Result<Server, std::io::Error> {
+pub fn run(
+    listener: TcpListener,
+    db_pool: PgPool,
+    email_client: EmailClient,
+    base_url: String,
+) -> Result<Server, std::io::Error> {
     // 将连接包装到一个智能指针中
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
@@ -47,8 +48,8 @@ pub fn run(listener: TcpListener,
             .app_data(email_client.clone())
             .app_data(base_url.clone())
     })
-        .listen(listener)?
-        .run();
+    .listen(listener)?
+    .run();
 
     Ok(server)
 }
@@ -65,21 +66,32 @@ impl Application {
         let connection_pool = get_connection_pool(&configuration.database);
 
         // 构建一个EmailClient
-        let sender_email = configuration.email_client.sender()
+        let sender_email = configuration
+            .email_client
+            .sender()
             .expect("Invalid sender email address.");
         let timeout = configuration.email_client.timeout();
         let email_client = EmailClient::new(
             configuration.email_client.base_url,
             sender_email,
             configuration.email_client.authorization_token,
-            timeout);
+            timeout,
+        );
 
         // 如果绑定地址失败，则发生错误io::Error，否则，调用.await
         // 获取TcpListener对象，获取绑定的实际端口
-        let address = format!("{}:{}", configuration.application.host, configuration.application.port);
+        let address = format!(
+            "{}:{}",
+            configuration.application.host, configuration.application.port
+        );
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool, email_client, configuration.application.base_url)?;
+        let server = run(
+            listener,
+            connection_pool,
+            email_client,
+            configuration.application.base_url,
+        )?;
 
         Ok(Self { port, server })
     }

@@ -1,6 +1,6 @@
+use crate::helpers::spawn_app;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
-use crate::helpers::spawn_app;
 
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
@@ -62,10 +62,12 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         let response = app.post_subscriptions(invalid_body.into()).await;
 
         // 断言
-        assert_eq!(400,
-                   response.status().as_u16(),
-                   "The API did not fail with 400 Bad Request when the payload was {}",
-                   error_message);
+        assert_eq!(
+            400,
+            response.status().as_u16(),
+            "The API did not fail with 400 Bad Request when the payload was {}",
+            error_message
+        );
     }
 
     // 清理数据库
@@ -119,7 +121,6 @@ async fn subscribe_sends_a_confirmation_email_for_valid_data() {
     // Mock会在析构时检查断言
 }
 
-
 #[tokio::test]
 async fn subscribe_sends_a_confirmation_email_with_a_link() {
     // 准备
@@ -142,4 +143,22 @@ async fn subscribe_sends_a_confirmation_email_with_a_link() {
 
     // 比较这两个提取的链接
     assert_eq!(confirmation_links.html, confirmation_links.plain_text);
+}
+
+#[tokio::test]
+async fn subscribe_fails_if_there_is_a_fatal_database_error() {
+    // 准备
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    sqlx::query!("ALTER TABLE subscription_tokens DROP COLUMN subscription_token;",)
+        .execute(&app.db_pool)
+        .await
+        .unwrap();
+
+    // 执行
+    let response = app.post_subscriptions(body.into()).await;
+
+    // 断言
+    assert_eq!(response.status().as_u16(), 500);
 }

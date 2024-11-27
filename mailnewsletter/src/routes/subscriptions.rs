@@ -1,12 +1,13 @@
-use chrono::Utc;
-use actix_web::{HttpResponse, web};
-use rand::distributions::Alphanumeric;
-use rand::Rng;
-use uuid::Uuid;
-use sqlx::{PgPool, Postgres, Transaction};
+use std::fmt::Formatter;
 use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
+use actix_web::{web, HttpResponse, ResponseError};
+use chrono::Utc;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
+use sqlx::{PgPool, Postgres, Transaction};
+use uuid::Uuid;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -22,7 +23,7 @@ impl TryFrom<FormData> for NewSubscriber {
     fn try_from(value: FormData) -> Result<Self, Self::Error> {
         let name = SubscriberName::parse(value.name)?;
         let email = SubscriberEmail::parse(value.email)?;
-        Ok(NewSubscriber { email, name })
+        Ok(Self { email, name })
     }
 }
 
@@ -47,50 +48,57 @@ pub async fn subscribe(
     // 从应用程序上下文中获取邮件客户端
     email_client: web::Data<EmailClient>,
     base_url: web::Data<ApplicationBaseUrl>,
-) -> HttpResponse {
+) -> Result<HttpResponse, actix_web::Error> {
     let new_subscriber = match form.0.try_into() {
         Ok(subscriber) => subscriber,
-        Err(_) => return HttpResponse::BadRequest().finish(),
+        Err(_) => return Ok(HttpResponse::BadRequest().finish()),
     };
     // 从连接池取出一个连接，并开启一个事务
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
     };
 
     let subscriber_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
         Ok(subscriber_id) => subscriber_id,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
     };
     let subscription_token = generate_subscription_token();
 
     // 存储订阅令牌
-    if store_token(&mut transaction, subscriber_id, &subscription_token).await.is_err() {
-        return HttpResponse::InternalServerError().finish();
-    }
+    store_token(&mut transaction, subscriber_id, &subscription_token).await?;
 
     if transaction.commit().await.is_err() {
-        return HttpResponse::InternalServerError().finish();
+        return Ok(HttpResponse::InternalServerError().finish());
     }
 
     //  使用生成的动态令牌发送确认邮件
-    if send_confirmation_email(&email_client, new_subscriber, &base_url.0, &subscription_token).await.is_err() {
-        return HttpResponse::InternalServerError().finish();
+    if send_confirmation_email(
+        &email_client,
+        new_subscriber,
+        &base_url.0,
+        &subscription_token,
+    )
+    .await
+    .is_err()
+    {
+        return Ok(HttpResponse::InternalServerError().finish());
     }
 
-    HttpResponse::Ok().finish()
+    Ok(HttpResponse::Ok().finish())
 }
 
 /**
  * 使用tracing::instrument宏过程，将跨度分别处理
  */
 #[tracing::instrument(
-name = "Saving new subscriber details in the database",
-skip(new_subscriber, transaction)
+    name = "Saving new subscriber details in the database",
+    skip(new_subscriber, transaction)
 )]
 pub async fn insert_subscriber(
     transaction: &mut Transaction<'_, Postgres>,
-    new_subscriber: &NewSubscriber) -> Result<Uuid, sqlx::Error> {
+    new_subscriber: &NewSubscriber,
+) -> Result<Uuid, sqlx::Error> {
     let subscriber_id = Uuid::new_v4();
     sqlx::query!(
         r#"
@@ -104,57 +112,70 @@ pub async fn insert_subscriber(
         new_subscriber.name.as_ref(),
         Utc::now()
     )
-        .execute(transaction.as_mut())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to execute query: {:?}", e);
-            e
-            // 使用?操作符，可以在函数调用失败时提前结束当前函数
-        })?;
+    .execute(transaction.as_mut())
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
+        // 使用?操作符，可以在函数调用失败时提前结束当前函数
+    })?;
     Ok(subscriber_id)
 }
 
 #[tracing::instrument(
-name = "Store subscription token in the database",
-skip(subscription_token, transaction)
+    name = "Store subscription token in the database",
+    skip(subscription_token, transaction)
 )]
-pub async fn store_token(transaction: &mut Transaction<'_, Postgres>,
-                         subscriber_id: Uuid,
-                         subscription_token: &str) -> Result<(), sqlx::Error> {
+pub async fn store_token(
+    transaction: &mut Transaction<'_, Postgres>,
+    subscriber_id: Uuid,
+    subscription_token: &str,
+) -> Result<(), StoreTokenError> {
     sqlx::query!(
         r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
         VALUES ($1, $2)"#,
         subscription_token,
         subscriber_id
     )
-        .execute(transaction.as_mut())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to execute query: {:?}", e);
-            e
-        })?;
+    .execute(transaction.as_mut())
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        StoreTokenError(e)
+    })?;
     Ok(())
 }
 
 #[tracing::instrument(
-name = "Send a confirmation email to a new subscriber",
-skip(email_client, new_subscriber, base_url, subscription_token)
+    name = "Send a confirmation email to a new subscriber",
+    skip(email_client, new_subscriber, base_url, subscription_token)
 )]
 async fn send_confirmation_email(
-    email_client: &EmailClient, new_subscriber: NewSubscriber, base_url: &str, subscription_token: &str,
+    email_client: &EmailClient,
+    new_subscriber: NewSubscriber,
+    base_url: &str,
+    subscription_token: &str,
 ) -> Result<(), reqwest::Error> {
-    let confirmation_link = format!("{}/subscriptions/confirm?subscription_token={}", base_url, subscription_token);
+    let confirmation_link = format!(
+        "{}/subscriptions/confirm?subscription_token={}",
+        base_url, subscription_token
+    );
 
     let plain_body = format!(
         "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
         confirmation_link
     );
 
-    let html_body = format!("Welcome to our newsletter!<br />\
-                               Click<a href=\"{}\">here</a> to confirm your subscription.", confirmation_link);
+    let html_body = format!(
+        "Welcome to our newsletter!<br />\
+                               Click<a href=\"{}\">here</a> to confirm your subscription.",
+        confirmation_link
+    );
 
     // 为新的订阅者发送一封邮件
-    email_client.send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body).await
+    email_client
+        .send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body)
+        .await
 }
 
 // 生成25个字符的订阅令牌
@@ -164,4 +185,42 @@ fn generate_subscription_token() -> String {
         .map(char::from)
         .take(25)
         .collect()
+}
+
+pub struct StoreTokenError(sqlx::Error);
+
+impl ResponseError for StoreTokenError {}
+
+impl std::fmt::Display for StoreTokenError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "A database error was encountered while \
+                trying to store a subscription token."
+        )
+    }
+}
+
+impl std::error::Error for StoreTokenError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // 编译器将&sqlx::Error隐式转换为&dyn Error
+        Some(&self.0)
+    }
+}
+
+impl std::fmt::Debug for StoreTokenError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+// 实现Error特质的任何类型提供类似的表示格式
+fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std::fmt::Result {
+    writeln!(f, "{}\n", e)?;
+    let mut current = e.source();
+    while let Some(cause) = current {
+        writeln!(f, "Caused by:\n\t{}", cause)?;
+        current = cause.source();
+    }
+    Ok(())
 }

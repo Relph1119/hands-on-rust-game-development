@@ -1,16 +1,18 @@
+use dotenv::dotenv;
+use mailnewsletter::configuration::{get_configuration, DatabaseSettings};
+use mailnewsletter::startup::{get_connection_pool, Application};
+use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
 use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use wiremock::MockServer;
-use mailnewsletter::configuration::{DatabaseSettings, get_configuration};
-use mailnewsletter::startup::{Application, get_connection_pool};
-use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
 
 /*
  * 使用once_cell，确保在测试期间最多只被初始化一次
  */
 static TRACING: Lazy<()> = Lazy::new(|| {
+    dotenv().ok();
     let default_filter_level = "info".to_string();
     let subscriber_name = "test".to_string();
     // 通过条件语句，将sink和stdout分开
@@ -89,9 +91,12 @@ impl TestApp {
                     // 删除数据库
                     let configuration = get_configuration().expect("Failed to read configuration.");
                     let connection = PgPool::connect_with(configuration.database.without_db())
-                        .await.expect("Failed to connect to Postgres.");
-                    connection.execute(format!(r#"DROP DATABASE "{}";"#, database_name).as_str())
-                        .await.expect("Failed to create database.");
+                        .await
+                        .expect("Failed to connect to Postgres.");
+                    connection
+                        .execute(format!(r#"DROP DATABASE "{}";"#, database_name).as_str())
+                        .await
+                        .expect("Failed to create database.");
                 }
             }
             Err(_) => tracing::error!("Timeout waiting for all connections to close."),
@@ -141,9 +146,12 @@ pub async fn spawn_app() -> TestApp {
 async fn configuration_database(config: &DatabaseSettings) -> PgPool {
     // 创建数据库
     let mut connection = PgConnection::connect_with(&config.without_db())
-        .await.expect("Failed to connect to Postgres.");
-    connection.execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
-        .await.expect("Failed to create database.");
+        .await
+        .expect("Failed to connect to Postgres.");
+    connection
+        .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
+        .await
+        .expect("Failed to create database.");
 
     // 迁移数据库
     let connection_pool = PgPool::connect_with(config.with_db())

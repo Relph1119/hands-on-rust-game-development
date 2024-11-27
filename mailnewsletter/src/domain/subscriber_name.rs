@@ -1,7 +1,6 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SubscriberName(String);
 
 impl SubscriberName {
@@ -35,8 +34,8 @@ impl AsRef<str> for SubscriberName {
 
 #[cfg(test)]
 mod tests {
-    use claim::{assert_err, assert_ok};
     use crate::domain::SubscriberName;
+    use claim::{assert_err, assert_ok};
 
     #[test]
     fn a_256_grapheme_long_name_is_valid() {

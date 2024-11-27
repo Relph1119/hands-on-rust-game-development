@@ -1,9 +1,8 @@
+use crate::domain::SubscriberEmail;
 use reqwest::Client;
 use secrecy::{ExposeSecret, SecretString};
-use crate::domain::SubscriberEmail;
 
-#[derive(Clone)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EmailClient {
     // 存储Client实例
     http_client: Client,
@@ -29,12 +28,10 @@ impl EmailClient {
         base_url: String,
         sender: SubscriberEmail,
         authorization_token: SecretString,
-        time_out: std::time::Duration) -> Self {
+        time_out: std::time::Duration,
+    ) -> Self {
         // 设置全局超时时间
-        let http_client = Client::builder()
-            .timeout(time_out)
-            .build()
-            .unwrap();
+        let http_client = Client::builder().timeout(time_out).build().unwrap();
 
         Self {
             http_client,
@@ -49,7 +46,8 @@ impl EmailClient {
         recipient: SubscriberEmail,
         subject: &str,
         html_content: &str,
-        text_content: &str) -> Result<(), reqwest::Error> {
+        text_content: &str,
+    ) -> Result<(), reqwest::Error> {
         // 发送HTTP请求
         let url = format!("{}/email", self.base_url);
         // 构建JSON请求体
@@ -64,7 +62,10 @@ impl EmailClient {
         self.http_client
             .post(&url)
             // 添加授权码
-            .header("X-Postmark-Server-Token", self.authorization_token.expose_secret())
+            .header(
+                "X-Postmark-Server-Token",
+                self.authorization_token.expose_secret(),
+            )
             .json(&request_body)
             .send()
             .await?
@@ -76,15 +77,15 @@ impl EmailClient {
 
 #[cfg(test)]
 mod test {
-    use claim::{assert_err, assert_ok};
-    use fake::{Fake, Faker};
-    use fake::faker::internet::en::SafeEmail;
-    use fake::faker::lorem::en::{Sentence, Paragraph};
-    use secrecy::SecretString;
-    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
-    use wiremock::matchers::{any, header, header_exists, method, path};
     use crate::domain::SubscriberEmail;
     use crate::email_client::EmailClient;
+    use claim::{assert_err, assert_ok};
+    use fake::faker::internet::en::SafeEmail;
+    use fake::faker::lorem::en::{Paragraph, Sentence};
+    use fake::{Fake, Faker};
+    use secrecy::SecretString;
+    use wiremock::matchers::{any, header, header_exists, method, path};
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
     struct SendEmailBodyMatcher;
 
@@ -123,10 +124,12 @@ mod test {
 
     // 获取EmailClient的测试实例
     fn email_client(base_url: String) -> EmailClient {
-        EmailClient::new(base_url,
-                         email(),
-                         SecretString::from(Faker.fake::<String>()),
-                         std::time::Duration::from_millis(200))
+        EmailClient::new(
+            base_url,
+            email(),
+            SecretString::from(Faker.fake::<String>()),
+            std::time::Duration::from_millis(200),
+        )
     }
 
     #[tokio::test]
@@ -150,7 +153,9 @@ mod test {
             .await;
 
         // 执行
-        let _ = email_client.send_email(email(), &subject(), &content(), &content()).await;
+        let _ = email_client
+            .send_email(email(), &subject(), &content(), &content())
+            .await;
 
         // 断言
     }
@@ -168,8 +173,9 @@ mod test {
             .await;
 
         // 执行
-        let outcome = email_client.send_email(
-            email(), &subject(), &content(), &content()).await;
+        let outcome = email_client
+            .send_email(email(), &subject(), &content(), &content())
+            .await;
 
         // 断言
         assert_ok!(outcome);
@@ -188,8 +194,9 @@ mod test {
             .await;
 
         // 执行
-        let outcome = email_client.send_email(
-            email(), &subject(), &content(), &content()).await;
+        let outcome = email_client
+            .send_email(email(), &subject(), &content(), &content())
+            .await;
 
         // 断言
         assert_err!(outcome);
@@ -211,8 +218,9 @@ mod test {
             .await;
 
         // 执行
-        let outcome = email_client.send_email(
-            email(), &subject(), &content(), &content()).await;
+        let outcome = email_client
+            .send_email(email(), &subject(), &content(), &content())
+            .await;
 
         // 断言
         assert_err!(outcome);

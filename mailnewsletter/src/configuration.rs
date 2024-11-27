@@ -1,19 +1,17 @@
-use serde_aux::field_attributes::deserialize_number_from_string;
-use secrecy::{ExposeSecret, SecretString};
-use sqlx::ConnectOptions;
-use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use crate::domain::SubscriberEmail;
+use secrecy::{ExposeSecret, SecretString};
+use serde_aux::field_attributes::deserialize_number_from_string;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use sqlx::ConnectOptions;
 
-#[derive(serde::Deserialize)]
-#[derive(Clone)]
+#[derive(serde::Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub email_client: EmailClientSettings,
 }
 
-#[derive(serde::Deserialize)]
-#[derive(Clone)]
+#[derive(serde::Deserialize, Clone)]
 pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
@@ -33,8 +31,7 @@ impl EmailClientSettings {
     }
 }
 
-#[derive(serde::Deserialize)]
-#[derive(Clone)]
+#[derive(serde::Deserialize, Clone)]
 pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
@@ -44,8 +41,7 @@ pub struct ApplicationSettings {
 }
 
 // 使用SecretString对数据库密码进行保护
-#[derive(serde::Deserialize)]
-#[derive(Clone)]
+#[derive(serde::Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: SecretString,
@@ -71,10 +67,18 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     // 初始化配置读取器
     let settings = config::Config::builder()
         // 从一个名为configuration.yaml的文件中读取配置
-        .add_source(config::File::from(configuration_directory.join("base.yaml")))
-        .add_source(config::File::from(configuration_directory.join(&environment_filename)))
+        .add_source(config::File::from(
+            configuration_directory.join("base.yaml"),
+        ))
+        .add_source(config::File::from(
+            configuration_directory.join(&environment_filename),
+        ))
         // 从环境变量中添加设置，前缀为APP，将__作为分隔
-        .add_source(config::Environment::with_prefix("APP").prefix_separator("_").separator("__"))
+        .add_source(
+            config::Environment::with_prefix("APP")
+                .prefix_separator("_")
+                .separator("__"),
+        )
         .build()?;
     // 尝试将配置转换为Settings类型
     settings.try_deserialize::<Settings>()
@@ -104,7 +108,8 @@ impl TryFrom<String> for Environment {
             "production" => Ok(Self::Production),
             other => Err(format!(
                 "{} is not a supported environment. Use either local or production.",
-                other)),
+                other
+            )),
         }
     }
 }
@@ -128,7 +133,9 @@ impl DatabaseSettings {
     pub fn with_db(&self) -> PgConnectOptions {
         let options = self.without_db().database(&self.database_name);
         // 将sqlx的日志级别设置为trace
-        options.clone().log_statements(tracing::log::LevelFilter::Trace);
+        options
+            .clone()
+            .log_statements(tracing::log::LevelFilter::Trace);
         options
     }
 }
