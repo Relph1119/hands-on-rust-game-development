@@ -206,7 +206,7 @@ impl std::error::Error for StoreTokenError {
 }
 
 // 实现Error特质的任何类型提供类似的表示格式
-fn error_chain_fmt(
+pub fn error_chain_fmt(
     e: &impl std::error::Error,
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
