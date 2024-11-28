@@ -9,3 +9,8 @@ cargo +nightly udeps
 ```shell
 docker build --tag mailnewsletter -f Dockerfile .
 ```
+
+3. 清除项目构建
+```shell
+cargo clean
+```
