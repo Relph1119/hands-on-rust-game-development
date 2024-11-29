@@ -106,7 +106,7 @@ fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Erro
         .to_string();
     Ok(Credentials {
         username,
-        password: SecretString::new(Box::from(password)),
+        password: SecretString::new(password.into_boxed_str()),
     })
 }
 
@@ -181,32 +181,44 @@ async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
 ) -> Result<uuid::Uuid, PublishError> {
-    let (user_id, expected_password_hash) = get_store_credentials(&credentials.username, &pool)
-        .await
-        .map_err(PublishError::UnexpectedError)?
-        .ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown username")))?;
+    let mut user_id = None;
+    let mut expected_password_hash = SecretString::new(
+        "$argon2id$v=19$m=19456,t=2,p=1$\
+    SW8tX/4KJ0TGE5lR3it+eA$Gx5X\
+    FwNt9z4wR/rJ6h+H5jBGbcjaWnE\
+    EsDXrkIqhPGs"
+            .into(),
+    );
+
+    if let Some((stored_user_id, stored_password_hash)) =
+        get_store_credentials(&credentials.username, &pool)
+            .await
+            .map_err(PublishError::UnexpectedError)?
+    {
+        user_id = Some(stored_user_id);
+        expected_password_hash = stored_password_hash;
+    }
 
     // 将CPU密集型任务转移到一个单独的线程池中
-    let _ = spawn_blocking_with_tracing(move || verify_password_hash(
-        expected_password_hash,
-        credentials.password,
-    ))
+    spawn_blocking_with_tracing(move || {
+        verify_password_hash(expected_password_hash, credentials.password)
+    })
     .await
     .context("Failed to spawn blocking task.")
-    .map_err(PublishError::UnexpectedError)?;
+    .map_err(PublishError::UnexpectedError)??;
 
-    Ok(user_id)
+    user_id.ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown username.")))
 }
 
 #[tracing::instrument(
     name = "Verify password hash",
     skip(expected_password_hash, password_candidate)
 )]
-fn verify_password_hash(
+pub fn verify_password_hash(
     expected_password_hash: SecretString,
     password_candidate: SecretString,
 ) -> Result<(), PublishError> {
-    let expected_password_hash = PasswordHash::new(&expected_password_hash.expose_secret())
+    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
         .context("Failed to parse hash in PHC string format.")
         .map_err(PublishError::UnexpectedError)?;
 
@@ -235,7 +247,12 @@ async fn get_store_credentials(
     .fetch_optional(pool)
     .await
     .context("Failed to perform a query to retrieve stored credentials.")?
-    .map(|row| (row.user_id, SecretString::new(Box::from(row.password_hash))));
+    .map(|row| {
+        (
+            row.user_id,
+            SecretString::new(row.password_hash.into_boxed_str()),
+        )
+    });
 
     Ok(row)
 }
