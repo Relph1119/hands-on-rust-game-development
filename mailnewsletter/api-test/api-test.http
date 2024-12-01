@@ -12,6 +12,10 @@ Content-Type: application/x-www-form-urlencoded
 
 email=thomas_mann@hotmail.com&name=Tom
 
-###
+### 测试镜像：测试健康检查
 GET http://127.0.0.1:56283/health_check
+Accept: application/json
+
+### 测试跨站脚本攻击
+GET http://localhost:8000/login?error=Your%20account%20has%20been%20locked%20please%20submit%20your%20details%203Ca%%20href%3D%22https%3A%2F%2Fzero2prod.com%22%3Ehere%3C%2Fa%3E%20to%20reslove%20the%20issue
 Accept: application/json

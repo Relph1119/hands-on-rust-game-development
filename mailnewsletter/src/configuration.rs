@@ -38,6 +38,8 @@ pub struct ApplicationSettings {
     pub host: String,
     // 添加测试环境的链接
     pub base_url: String,
+    // 配置hmac密钥
+    pub hmac_secret: SecretString,
 }
 
 // 使用SecretString对数据库密码进行保护
