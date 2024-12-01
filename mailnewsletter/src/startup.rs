@@ -8,12 +8,15 @@
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::{confirm, health_check, home, login, login_form, publish_newsletter, subscribe};
+use actix_web::cookie::Key;
 use actix_web::dev::Server;
 use actix_web::{web, App, HttpServer};
+use actix_web_flash_messages::storage::CookieMessageStore;
+use actix_web_flash_messages::FlashMessagesFramework;
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::net::TcpListener;
-use secrecy::SecretString;
 use tracing_actix_web::TracingLogger;
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
@@ -34,10 +37,15 @@ pub fn run(
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
     let base_url = web::Data::new(ApplicationBaseUrl(base_url));
+    // 存储闪现消息
+    let message_store = CookieMessageStore::builder(Key::from(hmac_secret.0.expose_secret().as_bytes())).build();
+    let message_framework = FlashMessagesFramework::builder(message_store).build();
     // HttpServer处理所有传输层的问题
     let server = HttpServer::new(move || {
         // App使用建造者模式，添加两个端点
         App::new()
+            // 注册消息组件
+            .wrap(message_framework.clone())
             // 通过wrap将TraceLogger中间件加入到App中
             .wrap(TracingLogger::default())
             // web::get()实际上是Route::new().guard(guard::Get())的简写

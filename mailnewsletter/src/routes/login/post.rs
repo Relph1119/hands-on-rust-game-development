@@ -3,7 +3,7 @@ use crate::routes::error_chain_fmt;
 use actix_web::error::InternalError;
 use actix_web::http::header::LOCATION;
 use actix_web::{web, HttpResponse};
-use actix_web::cookie::Cookie;
+use actix_web_flash_messages::FlashMessage;
 use secrecy::SecretString;
 use sqlx::PgPool;
 
@@ -41,10 +41,10 @@ pub async fn login(
                 AuthError::InvalidCredentials(_) => LoginError::AuthError(e.into()),
                 AuthError::UnexpectedError(_) => LoginError::UnexpectedError(e.into()),
             };
-
+            // FlashMessagesFramework中间件创建Cookie，进行签名，设置正确的属性
+            FlashMessage::error(e.to_string()).send();
             let response = HttpResponse::SeeOther()
                 .insert_header((LOCATION, "/login"))
-                .cookie(Cookie::new("_flash", e.to_string()))
                 .finish();
             Err(InternalError::from_response(e, response))
         }
