@@ -4,7 +4,7 @@ use mailnewsletter::startup::Application;
 use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let subscriber = get_subscriber("mailnewsletter".into(), "info".into(), std::io::stdout);
     init_subscriber(subscriber);

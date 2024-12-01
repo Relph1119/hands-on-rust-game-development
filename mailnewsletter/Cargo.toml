@@ -17,7 +17,7 @@ actix-web = "4.9.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 serde = { version = "1.0.214", features = ["derive"] }
 config = "0.14.1"
-uuid = { version = "1.11.0", features = ["v4"] }
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
 chrono = "0.4.38"
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.0", features = ["registry", "env-filter"] }
@@ -36,6 +36,8 @@ anyhow = "1.0.93"
 base64 = "0.22.1"
 argon2 = {version = "0.5.3", features = ["std"]}
 actix-web-flash-messages = {version = "0.4.2", features = ["cookies"]}
+actix-session = { version = "0.6.2", features = ["redis-rs-tls-session"] }
+serde_json = "1.0.133"
 
 [dev-dependencies]
 once_cell = "1.20.2"

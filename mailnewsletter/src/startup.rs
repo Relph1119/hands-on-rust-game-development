@@ -7,7 +7,7 @@
  */
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::{confirm, health_check, home, login, login_form, publish_newsletter, subscribe};
+use crate::routes::{admin_dashboard, confirm, health_check, home, login, login_form, publish_newsletter, subscribe};
 use actix_web::cookie::Key;
 use actix_web::dev::Server;
 use actix_web::{web, App, HttpServer};
@@ -17,6 +17,8 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::net::TcpListener;
+use actix_session::SessionMiddleware;
+use actix_session::storage::RedisSessionStore;
 use tracing_actix_web::TracingLogger;
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
@@ -26,26 +28,32 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
         .connect_lazy_with(configuration.with_db())
 }
 
-pub fn run(
+pub async fn run(
     listener: TcpListener,
     db_pool: PgPool,
     email_client: EmailClient,
     base_url: String,
     hmac_secret: HmacSecret,
-) -> Result<Server, std::io::Error> {
+    redis_uri: SecretString,
+) -> Result<Server, anyhow::Error> {
     // 将连接包装到一个智能指针中
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
     let base_url = web::Data::new(ApplicationBaseUrl(base_url));
+    let secret_key = Key::from(hmac_secret.0.expose_secret().as_bytes());
     // 存储闪现消息
-    let message_store = CookieMessageStore::builder(Key::from(hmac_secret.0.expose_secret().as_bytes())).build();
+    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
+    // 创建Redis会话存储
+    let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
     // HttpServer处理所有传输层的问题
     let server = HttpServer::new(move || {
         // App使用建造者模式，添加两个端点
         App::new()
             // 注册消息组件
             .wrap(message_framework.clone())
+            // 注册Session组件
+            .wrap(SessionMiddleware::new(redis_store.clone(), secret_key.clone()))
             // 通过wrap将TraceLogger中间件加入到App中
             .wrap(TracingLogger::default())
             // web::get()实际上是Route::new().guard(guard::Get())的简写
@@ -56,6 +64,7 @@ pub fn run(
             .route("/", web::get().to(home))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
+            .route("/admin/dashboard", web::get().to(admin_dashboard))
             // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
             .app_data(db_pool.clone())
             // 将EmailClient注册到应用程序的上下文中
@@ -81,7 +90,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub async fn build(configuration: Settings) -> Result<Self, std::io::Error> {
+    pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
         // 构建一个EmailClient
@@ -111,7 +120,8 @@ impl Application {
             email_client,
             configuration.application.base_url,
             HmacSecret(configuration.application.hmac_secret),
-        )?;
+            configuration.redis_uri,
+        ).await?;
 
         Ok(Self { port, server })
     }
