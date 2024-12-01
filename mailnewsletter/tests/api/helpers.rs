@@ -1,5 +1,5 @@
-use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
 use argon2::password_hash::SaltString;
+use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
 use dotenv::dotenv;
 use mailnewsletter::configuration::{get_configuration, DatabaseSettings};
 use mailnewsletter::startup::{get_connection_pool, Application};
@@ -46,11 +46,12 @@ pub struct TestApp {
     // 添加端口
     pub port: u16,
     pub test_user: TestUser,
+    pub api_client: reqwest::Client,
 }
 
 impl TestApp {
     pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
-        reqwest::Client::new()
+        self.api_client
             .post(&format!("{}/subscriptions", &self.address))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
@@ -85,7 +86,7 @@ impl TestApp {
     }
 
     pub async fn post_newsletters(&self, body: serde_json::Value) -> reqwest::Response {
-        reqwest::Client::new()
+        self.api_client
             .post(&format!("{}/newsletters", &self.address))
             // 配置随机凭证
             .basic_auth(&self.test_user.username, Some(&self.test_user.password))
@@ -93,6 +94,31 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/login", &self.address))
+            // 这个reqwest方法确保请求体为URL编码，并相应地设置Content-Type请求头
+            .form(body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn get_login_html(&self) -> String {
+        // 只需要观察HTML页面
+        self.api_client
+            .get(&format!("{}/login", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+            .text()
+            .await
+            .unwrap()
     }
 
     // 删除数据库
@@ -139,8 +165,10 @@ impl TestUser {
             Algorithm::Argon2id,
             Version::V0x13,
             Params::new(15000, 2, 1, None).unwrap(),
-        ).hash_password(self.password.as_bytes(), &salt)
-            .unwrap().to_string();
+        )
+        .hash_password(self.password.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
         sqlx::query!(
             r#"INSERT INTO users (user_id, username, password_hash)
         VALUES ($1, $2, $3)"#,
@@ -184,6 +212,12 @@ pub async fn spawn_app() -> TestApp {
     let application_port = application.port();
     let _ = tokio::spawn(application.run_until_stopped());
 
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .cookie_store(true)
+        .build()
+        .unwrap();
+
     // 将应用程序地址返回给调用者
     let test_app = TestApp {
         address: format!("http://localhost:{}", application_port),
@@ -191,6 +225,7 @@ pub async fn spawn_app() -> TestApp {
         db_pool: get_connection_pool(&configuration.database),
         email_server,
         test_user: TestUser::generate(),
+        api_client: client,
     };
 
     // 添加一个随机的用户名和密码
@@ -219,4 +254,9 @@ async fn configuration_database(config: &DatabaseSettings) -> PgPool {
         .expect("Failed to migrate the database");
 
     connection_pool
+}
+
+pub fn assert_is_redirect_to(response: &reqwest::Response, location: &str) {
+    assert_eq!(response.status().as_u16(), 303);
+    assert_eq!(response.headers().get("Location").unwrap(), location);
 }

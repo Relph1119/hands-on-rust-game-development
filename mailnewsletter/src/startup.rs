@@ -53,7 +53,8 @@ pub fn run(
             // 将EmailClient注册到应用程序的上下文中
             .app_data(email_client.clone())
             .app_data(base_url.clone())
-            .app_data(hmac_secret.clone())
+            // 如果是自定义封装的类，依然需要用Data封装一次，否则无法获取
+            .app_data(web::Data::new(hmac_secret.clone()))
     })
     .listen(listener)?
     .run();
