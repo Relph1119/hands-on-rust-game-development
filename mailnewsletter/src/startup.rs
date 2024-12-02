@@ -7,7 +7,9 @@
  */
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::{admin_dashboard, confirm, health_check, home, login, login_form, publish_newsletter, subscribe};
+use crate::routes::{admin_dashboard, change_password, change_password_form, confirm, health_check, home, log_out, login, login_form, publish_newsletter, subscribe};
+use actix_session::storage::RedisSessionStore;
+use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
 use actix_web::dev::Server;
 use actix_web::{web, App, HttpServer};
@@ -17,8 +19,6 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::net::TcpListener;
-use actix_session::SessionMiddleware;
-use actix_session::storage::RedisSessionStore;
 use tracing_actix_web::TracingLogger;
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
@@ -53,7 +53,10 @@ pub async fn run(
             // 注册消息组件
             .wrap(message_framework.clone())
             // 注册Session组件
-            .wrap(SessionMiddleware::new(redis_store.clone(), secret_key.clone()))
+            .wrap(SessionMiddleware::new(
+                redis_store.clone(),
+                secret_key.clone(),
+            ))
             // 通过wrap将TraceLogger中间件加入到App中
             .wrap(TracingLogger::default())
             // web::get()实际上是Route::new().guard(guard::Get())的简写
@@ -65,6 +68,9 @@ pub async fn run(
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
             .route("/admin/dashboard", web::get().to(admin_dashboard))
+            .route("/admin/password", web::get().to(change_password_form))
+            .route("/admin/password", web::post().to(change_password))
+            .route("/admin/logout", web::post().to(log_out))
             // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
             .app_data(db_pool.clone())
             // 将EmailClient注册到应用程序的上下文中
@@ -80,7 +86,7 @@ pub async fn run(
 }
 
 #[derive(Clone, Debug)]
-pub struct HmacSecret (pub SecretString);
+pub struct HmacSecret(pub SecretString);
 
 pub struct ApplicationBaseUrl(pub String);
 
@@ -121,7 +127,8 @@ impl Application {
             configuration.application.base_url,
             HmacSecret(configuration.application.hmac_secret),
             configuration.redis_uri,
-        ).await?;
+        )
+        .await?;
 
         Ok(Self { port, server })
     }

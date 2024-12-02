@@ -14,3 +14,7 @@ docker build --tag mailnewsletter -f Dockerfile .
 ```shell
 cargo clean
 ```
+
+## 项目的登录密码
+
+everythinghastostartsomewhere
