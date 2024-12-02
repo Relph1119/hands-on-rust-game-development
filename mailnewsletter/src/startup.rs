@@ -19,7 +19,9 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::net::TcpListener;
+use actix_web::middleware::from_fn;
 use tracing_actix_web::TracingLogger;
+use crate::authentication::reject_anonymous_users;
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new()
@@ -60,24 +62,28 @@ pub async fn run(
             // 通过wrap将TraceLogger中间件加入到App中
             .wrap(TracingLogger::default())
             // web::get()实际上是Route::new().guard(guard::Get())的简写
-            .route("/health_check", web::get().to(health_check))
-            .route("/subscriptions", web::post().to(subscribe))
-            .route("/subscriptions/confirm", web::get().to(confirm))
-            .route("/newsletters", web::post().to(publish_newsletter))
             .route("/", web::get().to(home))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
-            .route("/admin/dashboard", web::get().to(admin_dashboard))
-            .route("/admin/password", web::get().to(change_password_form))
-            .route("/admin/password", web::post().to(change_password))
-            .route("/admin/logout", web::post().to(log_out))
+            .route("/health_check", web::get().to(health_check))
+            .route("/newsletters", web::post().to(publish_newsletter))
+            .route("/subscriptions", web::post().to(subscribe))
+            .route("/subscriptions/confirm", web::get().to(confirm))
+            // 限制端点的访问路由
+            .service(
+                web::scope("/admin")
+                    // 将中间件仅限于/admin/*
+                    .wrap(from_fn(reject_anonymous_users))
+                    .route("/dashboard", web::get().to(admin_dashboard))
+                    .route("/password", web::get().to(change_password_form))
+                    .route("/password", web::post().to(change_password))
+                    .route("/logout", web::post().to(log_out))
+            )
             // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
             .app_data(db_pool.clone())
             // 将EmailClient注册到应用程序的上下文中
             .app_data(email_client.clone())
             .app_data(base_url.clone())
-            // 如果是自定义封装的类，依然需要用Data封装一次，否则无法获取
-            .app_data(web::Data::new(hmac_secret.clone()))
     })
     .listen(listener)?
     .run();
