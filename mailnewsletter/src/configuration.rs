@@ -13,26 +13,6 @@ pub struct Settings {
 }
 
 #[derive(serde::Deserialize, Clone)]
-pub struct EmailClientSettings {
-    pub base_url: String,
-    pub sender_email: String,
-    // 授权token配置
-    pub authorization_token: SecretString,
-    // 配置超时时间
-    pub timeout_milliseconds: u64,
-}
-
-impl EmailClientSettings {
-    pub fn sender(&self) -> Result<SubscriberEmail, String> {
-        SubscriberEmail::parse(self.sender_email.clone())
-    }
-
-    pub fn timeout(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(self.timeout_milliseconds)
-    }
-}
-
-#[derive(serde::Deserialize, Clone)]
 pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
@@ -54,6 +34,52 @@ pub struct DatabaseSettings {
     pub database_name: String,
     // 确定是否要求加密连接
     pub require_ssl: bool,
+}
+
+impl DatabaseSettings {
+    // 配置Postgres的数据库连接
+    pub fn without_db(&self) -> PgConnectOptions {
+        let ssl_mode = if self.require_ssl {
+            PgSslMode::Require
+        } else {
+            PgSslMode::Prefer
+        };
+        PgConnectOptions::new()
+            .host(&self.host)
+            .username(&self.username)
+            .password(&self.password.expose_secret())
+            .port(self.port)
+            .ssl_mode(ssl_mode)
+    }
+
+    pub fn with_db(&self) -> PgConnectOptions {
+        let options = self.without_db().database(&self.database_name);
+        // 将sqlx的日志级别设置为trace
+        options
+            .clone()
+            .log_statements(tracing::log::LevelFilter::Trace);
+        options
+    }
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct EmailClientSettings {
+    pub base_url: String,
+    pub sender_email: String,
+    // 授权token配置
+    pub authorization_token: SecretString,
+    // 配置超时时间
+    pub timeout_milliseconds: u64,
+}
+
+impl EmailClientSettings {
+    pub fn sender(&self) -> Result<SubscriberEmail, String> {
+        SubscriberEmail::parse(self.sender_email.clone())
+    }
+
+    pub fn timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.timeout_milliseconds)
+    }
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
@@ -117,28 +143,4 @@ impl TryFrom<String> for Environment {
     }
 }
 
-impl DatabaseSettings {
-    // 配置Postgres的数据库连接
-    pub fn without_db(&self) -> PgConnectOptions {
-        let ssl_mode = if self.require_ssl {
-            PgSslMode::Require
-        } else {
-            PgSslMode::Prefer
-        };
-        PgConnectOptions::new()
-            .host(&self.host)
-            .username(&self.username)
-            .password(&self.password.expose_secret())
-            .port(self.port)
-            .ssl_mode(ssl_mode)
-    }
 
-    pub fn with_db(&self) -> PgConnectOptions {
-        let options = self.without_db().database(&self.database_name);
-        // 将sqlx的日志级别设置为trace
-        options
-            .clone()
-            .log_statements(tracing::log::LevelFilter::Trace);
-        options
-    }
-}

@@ -29,6 +29,35 @@ impl TryFrom<FormData> for NewSubscriber {
 }
 
 /*
+ * 将所有需要处理的错误类型都设为枚举的变体
+ * #[error]属性为所修饰的枚举变体定义了Display特质的表示格式
+ * #[source]属性被用于指定Error::source方法所返回的错误根本原因
+ * #[from]属性自动为所处的错误类型派生了来自属性所修饰的字段类型的From特质
+ */
+#[derive(thiserror::Error)]
+pub enum SubscribeError {
+    #[error("{0}")]
+    ValidationError(String),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
+impl std::fmt::Debug for SubscribeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl ResponseError for SubscribeError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            SubscribeError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+/*
  * actix-web使用HashMap存储应用程序状态，
  * 当一个新的请求到来时，web::Data会获取函数签名中指定类型的TypeId，并检查类型映射中是否存在对应的记录。
  * 如果存在，检索到的值强制转换为指定的类型，并传递给处理器。
@@ -79,6 +108,47 @@ pub async fn subscribe(
     .await
     .context("Failed to send a confirmation email.")?;
     Ok(HttpResponse::Ok().finish())
+}
+
+// 生成25个字符的订阅令牌
+fn generate_subscription_token() -> String {
+    let mut rng = rand::thread_rng();
+    std::iter::repeat_with(|| rng.sample(Alphanumeric))
+        .map(char::from)
+        .take(25)
+        .collect()
+}
+
+#[tracing::instrument(
+    name = "Send a confirmation email to a new subscriber",
+    skip(email_client, new_subscriber, base_url, subscription_token)
+)]
+async fn send_confirmation_email(
+    email_client: &EmailClient,
+    new_subscriber: NewSubscriber,
+    base_url: &str,
+    subscription_token: &str,
+) -> Result<(), reqwest::Error> {
+    let confirmation_link = format!(
+        "{}/subscriptions/confirm?subscription_token={}",
+        base_url, subscription_token
+    );
+
+    let plain_body = format!(
+        "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
+        confirmation_link
+    );
+
+    let html_body = format!(
+        "Welcome to our newsletter!<br />\
+                               Click<a href=\"{}\">here</a> to confirm your subscription.",
+        confirmation_link
+    );
+
+    // 为新的订阅者发送一封邮件
+    email_client
+        .send_email(&new_subscriber.email, "Welcome!", &html_body, &plain_body)
+        .await
 }
 
 /**
@@ -139,47 +209,6 @@ pub async fn store_token(
     Ok(())
 }
 
-#[tracing::instrument(
-    name = "Send a confirmation email to a new subscriber",
-    skip(email_client, new_subscriber, base_url, subscription_token)
-)]
-async fn send_confirmation_email(
-    email_client: &EmailClient,
-    new_subscriber: NewSubscriber,
-    base_url: &str,
-    subscription_token: &str,
-) -> Result<(), reqwest::Error> {
-    let confirmation_link = format!(
-        "{}/subscriptions/confirm?subscription_token={}",
-        base_url, subscription_token
-    );
-
-    let plain_body = format!(
-        "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
-        confirmation_link
-    );
-
-    let html_body = format!(
-        "Welcome to our newsletter!<br />\
-                               Click<a href=\"{}\">here</a> to confirm your subscription.",
-        confirmation_link
-    );
-
-    // 为新的订阅者发送一封邮件
-    email_client
-        .send_email(&new_subscriber.email, "Welcome!", &html_body, &plain_body)
-        .await
-}
-
-// 生成25个字符的订阅令牌
-fn generate_subscription_token() -> String {
-    let mut rng = rand::thread_rng();
-    std::iter::repeat_with(|| rng.sample(Alphanumeric))
-        .map(char::from)
-        .take(25)
-        .collect()
-}
-
 pub struct StoreTokenError(sqlx::Error);
 
 impl std::fmt::Display for StoreTokenError {
@@ -217,33 +246,4 @@ pub fn error_chain_fmt(
         current = cause.source();
     }
     Ok(())
-}
-
-/*
- * 将所有需要处理的错误类型都设为枚举的变体
- * #[error]属性为所修饰的枚举变体定义了Display特质的表示格式
- * #[source]属性被用于指定Error::source方法所返回的错误根本原因
- * #[from]属性自动为所处的错误类型派生了来自属性所修饰的字段类型的From特质
- */
-#[derive(thiserror::Error)]
-pub enum SubscribeError {
-    #[error("{0}")]
-    ValidationError(String),
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
-}
-
-impl std::fmt::Debug for SubscribeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
-    }
-}
-
-impl ResponseError for SubscribeError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
-            SubscribeError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
 }

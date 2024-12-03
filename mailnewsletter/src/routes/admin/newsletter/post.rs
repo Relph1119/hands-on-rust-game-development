@@ -26,6 +26,7 @@ pub async fn publish_newsletter(
     pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
 ) -> Result<HttpResponse, actix_web::Error> {
+    // 获取已确认的订阅者
     let subscribers = get_confirmed_subscribers(&pool).await.map_err(e500)?;
     for subscriber in subscribers {
         match subscriber {
@@ -60,10 +61,12 @@ struct ConfirmedSubscriber {
     email: SubscriberEmail,
 }
 
+// 获取已确认的订阅者
 #[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
 async fn get_confirmed_subscribers(
     pool: &PgPool,
 ) -> Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>, anyhow::Error> {
+    // sqlx::query_as!将检索到的行映射到第一个参数ConfirmedSubscriber中指定的类型。
     let confirmed_subscribers = sqlx::query!(
         r#"
         SELECT email
@@ -75,6 +78,7 @@ async fn get_confirmed_subscribers(
     .await?
     .into_iter()
     .map(|r| match SubscriberEmail::parse(r.email) {
+        // 验证邮箱地址是否符合
         Ok(email) => Ok(ConfirmedSubscriber { email }),
         Err(error) => Err(anyhow::anyhow!(error)),
     })

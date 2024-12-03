@@ -10,7 +10,7 @@ use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::{
     admin_dashboard, change_password, change_password_form, confirm, health_check, home, log_out,
-    login, login_form, publish_newsletter, subscribe,
+    login, login_form, publish_newsletter, publish_newsletter_form, subscribe,
 };
 use actix_session::storage::RedisSessionStore;
 use actix_session::SessionMiddleware;
@@ -25,76 +25,6 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
-
-pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
-    PgPoolOptions::new()
-        // 设置超时响应时间为5秒
-        .acquire_timeout(std::time::Duration::from_secs(5))
-        .connect_lazy_with(configuration.with_db())
-}
-
-pub async fn run(
-    listener: TcpListener,
-    db_pool: PgPool,
-    email_client: EmailClient,
-    base_url: String,
-    hmac_secret: SecretString,
-    redis_uri: SecretString,
-) -> Result<Server, anyhow::Error> {
-    // 将连接包装到一个智能指针中
-    let db_pool = web::Data::new(db_pool);
-    let email_client = web::Data::new(email_client);
-    let base_url = web::Data::new(ApplicationBaseUrl(base_url));
-    let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
-    // 存储闪现消息
-    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
-    let message_framework = FlashMessagesFramework::builder(message_store).build();
-    // 创建Redis会话存储
-    let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
-    // HttpServer处理所有传输层的问题
-    let server = HttpServer::new(move || {
-        // App使用建造者模式，添加两个端点
-        App::new()
-            // 注册消息组件
-            .wrap(message_framework.clone())
-            // 注册Session组件
-            .wrap(SessionMiddleware::new(
-                redis_store.clone(),
-                secret_key.clone(),
-            ))
-            // 通过wrap将TraceLogger中间件加入到App中
-            .wrap(TracingLogger::default())
-            // web::get()实际上是Route::new().guard(guard::Get())的简写
-            .route("/", web::get().to(home))
-            .route("/login", web::get().to(login_form))
-            .route("/login", web::post().to(login))
-            .route("/health_check", web::get().to(health_check))
-            .route("/newsletters", web::post().to(publish_newsletter))
-            .route("/subscriptions", web::post().to(subscribe))
-            .route("/subscriptions/confirm", web::get().to(confirm))
-            // 限制端点的访问路由
-            .service(
-                web::scope("/admin")
-                    // 将中间件仅限于/admin/*
-                    .wrap(from_fn(reject_anonymous_users))
-                    .route("/dashboard", web::get().to(admin_dashboard))
-                    .route("/password", web::get().to(change_password_form))
-                    .route("/password", web::post().to(change_password))
-                    .route("/logout", web::post().to(log_out)),
-            )
-            // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
-            .app_data(db_pool.clone())
-            // 将EmailClient注册到应用程序的上下文中
-            .app_data(email_client.clone())
-            .app_data(base_url.clone())
-    })
-    .listen(listener)?
-    .run();
-
-    Ok(server)
-}
-
-pub struct ApplicationBaseUrl(pub String);
 
 pub struct Application {
     port: u16,
@@ -147,4 +77,76 @@ impl Application {
     pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
         self.server.await
     }
+}
+
+pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
+    PgPoolOptions::new()
+        // 设置超时响应时间为5秒
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect_lazy_with(configuration.with_db())
+}
+
+pub struct ApplicationBaseUrl(pub String);
+
+pub async fn run(
+    listener: TcpListener,
+    db_pool: PgPool,
+    email_client: EmailClient,
+    base_url: String,
+    hmac_secret: SecretString,
+    redis_uri: SecretString,
+) -> Result<Server, anyhow::Error> {
+    // 将连接包装到一个智能指针中
+    let db_pool = web::Data::new(db_pool);
+    let email_client = web::Data::new(email_client);
+    let base_url = web::Data::new(ApplicationBaseUrl(base_url));
+    let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
+    // 存储闪现消息
+    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
+    let message_framework = FlashMessagesFramework::builder(message_store).build();
+    // 创建Redis会话存储
+    let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
+    // HttpServer处理所有传输层的问题
+    let server = HttpServer::new(move || {
+        // App使用建造者模式，添加两个端点
+        App::new()
+            // 注册消息组件
+            .wrap(message_framework.clone())
+            // 注册Session组件
+            .wrap(SessionMiddleware::new(
+                redis_store.clone(),
+                secret_key.clone(),
+            ))
+            // 通过wrap将TraceLogger中间件加入到App中
+            .wrap(TracingLogger::default())
+            // web::get()实际上是Route::new().guard(guard::Get())的简写
+            .route("/", web::get().to(home))
+            .route("/login", web::get().to(login_form))
+            .route("/login", web::post().to(login))
+            .route("/health_check", web::get().to(health_check))
+            .route("/newsletters", web::post().to(publish_newsletter))
+            .route("/subscriptions", web::post().to(subscribe))
+            .route("/subscriptions/confirm", web::get().to(confirm))
+            // 限制端点的访问路由
+            .service(
+                web::scope("/admin")
+                    // 将中间件仅限于/admin/*
+                    .wrap(from_fn(reject_anonymous_users))
+                    .route("/dashboard", web::get().to(admin_dashboard))
+                    .route("/newsletters", web::get().to(publish_newsletter_form))
+                    .route("/newsletters", web::post().to(publish_newsletter))
+                    .route("/password", web::get().to(change_password_form))
+                    .route("/password", web::post().to(change_password))
+                    .route("/logout", web::post().to(log_out)),
+            )
+            // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
+            .app_data(db_pool.clone())
+            // 将EmailClient注册到应用程序的上下文中
+            .app_data(email_client.clone())
+            .app_data(base_url.clone())
+    })
+    .listen(listener)?
+    .run();
+
+    Ok(server)
 }
