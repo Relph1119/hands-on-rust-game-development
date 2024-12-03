@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use crate::session_state::TypedSession;
 use crate::utils::{e500, see_other};
 use actix_web::body::MessageBody;
@@ -6,6 +5,7 @@ use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::error::InternalError;
 use actix_web::middleware::Next;
 use actix_web::{FromRequest, HttpMessage};
+use std::ops::Deref;
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug)]
@@ -47,6 +47,3 @@ pub async fn reject_anonymous_users(
         }
     }
 }
-
-
-

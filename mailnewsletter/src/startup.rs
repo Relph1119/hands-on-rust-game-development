@@ -5,13 +5,18 @@
  * 删除.await的目的是由于HttpServer::run会返回一个Server实例，当调用.await时，不断循环监听地址，处理到达的请求。
  * 采用随机端口运行后台程序：加入应用地址address作为参数
  */
+use crate::authentication::reject_anonymous_users;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::{admin_dashboard, change_password, change_password_form, confirm, health_check, home, log_out, login, login_form, publish_newsletter, subscribe};
+use crate::routes::{
+    admin_dashboard, change_password, change_password_form, confirm, health_check, home, log_out,
+    login, login_form, publish_newsletter, subscribe,
+};
 use actix_session::storage::RedisSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
 use actix_web::dev::Server;
+use actix_web::middleware::from_fn;
 use actix_web::{web, App, HttpServer};
 use actix_web_flash_messages::storage::CookieMessageStore;
 use actix_web_flash_messages::FlashMessagesFramework;
@@ -19,9 +24,7 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::net::TcpListener;
-use actix_web::middleware::from_fn;
 use tracing_actix_web::TracingLogger;
-use crate::authentication::reject_anonymous_users;
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new()
@@ -35,14 +38,14 @@ pub async fn run(
     db_pool: PgPool,
     email_client: EmailClient,
     base_url: String,
-    hmac_secret: HmacSecret,
+    hmac_secret: SecretString,
     redis_uri: SecretString,
 ) -> Result<Server, anyhow::Error> {
     // 将连接包装到一个智能指针中
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
     let base_url = web::Data::new(ApplicationBaseUrl(base_url));
-    let secret_key = Key::from(hmac_secret.0.expose_secret().as_bytes());
+    let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
     // 存储闪现消息
     let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
@@ -77,7 +80,7 @@ pub async fn run(
                     .route("/dashboard", web::get().to(admin_dashboard))
                     .route("/password", web::get().to(change_password_form))
                     .route("/password", web::post().to(change_password))
-                    .route("/logout", web::post().to(log_out))
+                    .route("/logout", web::post().to(log_out)),
             )
             // 向应用程序状态（与单个请求生命周期无关的数据）添加信息
             .app_data(db_pool.clone())
@@ -90,9 +93,6 @@ pub async fn run(
 
     Ok(server)
 }
-
-#[derive(Clone, Debug)]
-pub struct HmacSecret(pub SecretString);
 
 pub struct ApplicationBaseUrl(pub String);
 
@@ -131,7 +131,7 @@ impl Application {
             connection_pool,
             email_client,
             configuration.application.base_url,
-            HmacSecret(configuration.application.hmac_secret),
+            configuration.application.hmac_secret,
             configuration.redis_uri,
         )
         .await?;

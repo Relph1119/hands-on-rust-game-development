@@ -24,8 +24,9 @@ pub async fn change_password(
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
         // 使用FlashMessage发送错误消息
         FlashMessage::error(
-            "You entered two different new passwords - the field values must match."
-        ).send();
+            "You entered two different new passwords - the field values must match.",
+        )
+        .send();
         return Ok(see_other("/admin/password"));
     }
 
@@ -40,7 +41,7 @@ pub async fn change_password(
                 FlashMessage::error("The current password is incorrect.").send();
                 Ok(see_other("/admin/password"))
             }
-            AuthError::UnexpectedError(_) => Err(e500(e).into())
+            AuthError::UnexpectedError(_) => Err(e500(e).into()),
         };
     }
 
