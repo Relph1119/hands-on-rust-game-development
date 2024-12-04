@@ -1,11 +1,20 @@
 use crate::helpers::{assert_is_redirect_to, spawn_app, ConfirmationLinks, TestApp};
+use fake::faker::internet::en::SafeEmail;
+use fake::faker::name::en::Name;
+use fake::Fake;
 use std::time::Duration;
 use wiremock::matchers::{any, method, path};
 use wiremock::{Mock, ResponseTemplate};
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
     // 使用被测程序的公共API来创建一个未确认的订阅者
-    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+    let name: String = Name().fake();
+    let email: String = SafeEmail().fake();
+    let body = serde_urlencoded::to_string(&serde_json::json!({
+        "name": name,
+        "email": email,
+    }))
+    .unwrap();
 
     let _mock_guard = Mock::given(path("/email"))
         .and(method("POST"))
@@ -66,7 +75,10 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
 
     // 执行第2部分：跟随重定向
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
     // Mock在Drop上验证我们是否发送了邮件简报
 }
 
@@ -97,7 +109,10 @@ async fn newsletters_are_not_delivered_to_confirmed_subscribers() {
 
     // 执行第2部分：跟随重定向
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
     // Mock在Drop上验证我们是否发送了邮件简报
 }
 
@@ -157,7 +172,9 @@ async fn newsletter_creation_is_idempotent() {
 
     // 执行第2部分：跟随重定向
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
 
     // 执行第3部分：再次提交表单
     let response = app.post_publish_newsletter(&newsletter_request_body).await;
@@ -165,8 +182,10 @@ async fn newsletter_creation_is_idempotent() {
 
     // 执行第4部分：跟随重定向
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
-
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - emails will go out shortly.</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
     // Mock在Drop上验证我们是否再次发送了邮件简报
 }
 
@@ -201,5 +220,6 @@ async fn concurrent_form_submission_is_handled_gracefully() {
         response1.text().await.unwrap(),
         response2.text().await.unwrap()
     );
+    app.dispatch_all_pending_emails().await;
     // Mock在Drop上验证我们是否再次发送了邮件简报
 }

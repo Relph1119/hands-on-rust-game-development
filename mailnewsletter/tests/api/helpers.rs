@@ -2,6 +2,8 @@ use argon2::password_hash::SaltString;
 use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
 use dotenv::dotenv;
 use mailnewsletter::configuration::{get_configuration, DatabaseSettings};
+use mailnewsletter::email_client::EmailClient;
+use mailnewsletter::issue_delivery_worker::{try_execute_task, ExecutionOutcome};
 use mailnewsletter::startup::{get_connection_pool, Application};
 use mailnewsletter::telemetry::{get_subscriber, init_subscriber};
 use once_cell::sync::Lazy;
@@ -9,7 +11,6 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use wiremock::MockServer;
-
 /*
  * 使用once_cell，确保在测试期间最多只被初始化一次
  */
@@ -35,6 +36,7 @@ pub struct TestApp {
     pub port: u16,
     pub test_user: TestUser,
     pub api_client: reqwest::Client,
+    pub email_client: EmailClient,
 }
 
 // 在发送给邮件API的请求中所包含的确认链接
@@ -44,6 +46,19 @@ pub struct ConfirmationLinks {
 }
 
 impl TestApp {
+    pub async fn dispatch_all_pending_emails(&self) {
+        // 消费所有队列任务
+        loop {
+            if let ExecutionOutcome::EmptyQueue =
+                try_execute_task(&self.db_pool, &self.email_client)
+                    .await
+                    .unwrap()
+            {
+                break;
+            }
+        }
+    }
+
     pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/subscriptions", &self.address))
@@ -242,6 +257,7 @@ pub async fn spawn_app() -> TestApp {
         email_server,
         test_user: TestUser::generate(),
         api_client: client,
+        email_client: configuration.email_client.client(),
     };
 
     // 添加一个随机的用户名和密码
