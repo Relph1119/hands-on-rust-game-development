@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO issue_delivery_queue (newsletter_issue_id, subscriber_email)\n        SELECT $1, email\n        FROM subscriptions\n        WHERE status = 'confirmed'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f79f56c20023b8882c890b0427eaf5b91db182351778d01e1682499e4bea263e"
+}

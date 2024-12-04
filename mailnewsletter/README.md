@@ -1,3 +1,5 @@
+# 项目说明
+
 ## 常用命令
 
 1. 发现无用的依赖
@@ -5,12 +7,17 @@
 cargo +nightly udeps
 ```
 
-2. 构建项目镜像
+2. sqlx离线模式
+```shell
+cargo sqlx prepare -- --lib
+```
+
+3. 构建项目镜像
 ```shell
 docker build --tag mailnewsletter -f Dockerfile .
 ```
 
-3. 清除项目构建
+4. 清除项目构建
 ```shell
 cargo clean
 ```
